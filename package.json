@@ -23,5 +23,8 @@
   "bugs": {
     "url": "https://github.com/Digvijay557/streamforge/issues"
   },
-  "homepage": "https://github.com/Digvijay557/streamforge#readme"
+  "homepage": "https://github.com/Digvijay557/streamforge#readme",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
 }

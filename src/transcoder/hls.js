@@ -25,9 +25,7 @@ function createMasterPlaylist(videoName, qualities) {
 
     for (const quality of qualities) {
 
-        content += `#EXT-X-STREAM-INF:
-        BANDWIDTH=${bandwidthMap[quality]},
-        RESOLUTION=${resolutionMap[quality]}\n`;
+        content += `#EXT-X-STREAM-INF:BANDWIDTH=${bandwidthMap[quality]},RESOLUTION=${resolutionMap[quality]}\n`;
         content += `${quality}p/index.m3u8\n\n`;
 
     }
