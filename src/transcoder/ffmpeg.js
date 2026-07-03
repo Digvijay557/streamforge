@@ -2,6 +2,7 @@ const {getVideoInfo} = require('./ffprobe');
 const fs = require('fs')
 const {exec} = require('child_process');
 const path = require('path');
+const { createMasterPlaylist } = require('./hls');
 
 
 function planQualities(height) {
@@ -10,6 +11,9 @@ function planQualities(height) {
     if (height >= 1080) qualities.push(1080);
     if (height >= 720) qualities.push(720);
     if (height >= 480) qualities.push(480);
+    if (height >= 360) qualities.push(360);
+    if (height >= 240) qualities.push(240);
+    if (height >= 144) qualities.push(144);
 
     if (qualities.length === 0) {
         qualities.push(height);
@@ -69,26 +73,24 @@ async function generateHLSforQuality(videoPath, quality, outputDir) {
 
 
 
-
-
-
-
 module.exports.generateHLS = async function (filepath) {
 
-  
+    console.log("🚀 generateHLS() started");
+
     const vidinfo = await getVideoInfo(filepath);
+    console.log("📄 Video Info:", vidinfo);
 
-  
     const qualities = planQualities(vidinfo.video.height);
+    console.log("🎥 Qualities:", qualities);
 
-   
     const videoName = path.parse(filepath).name;
 
-    
     await ensureDir(".streamforge");
     await ensureDir(`.streamforge/${videoName}`);
 
     for (const quality of qualities) {
+
+        console.log(`⚙️ Generating ${quality}p...`);
 
         const outputDir = `.streamforge/${videoName}/${quality}p`;
 
@@ -98,6 +100,11 @@ module.exports.generateHLS = async function (filepath) {
             filepath,
             quality,
             outputDir
-            );
-        }
+        );
+
+        console.log(`✅ ${quality}p generated`);
     }
+    createMasterPlaylist(videoName,qualities)
+
+    console.log("🎉 All qualities generated.");
+}
