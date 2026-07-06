@@ -1,12 +1,21 @@
+// server.js
+
 const express = require("express");
-const streamforge = require("./src/index.js");
+const streamforge = require("./src/index"); // Change this if your entry file is different
 
 const app = express();
 
-app.use(streamforge({
-    source: "./videos"
-}));
+// StreamForge middleware
+app.use(
+    "/streamforge",
+    streamforge({
+        source: "./videos"
+    })
+);
 
-app.listen(3000, () => {
-    console.log("Running on http://localhost:3000");
+// Start server
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log(`🚀 Running on http://localhost:${PORT}`);
 });

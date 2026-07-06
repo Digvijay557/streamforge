@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>SFPlayer Test</title>
+</head>
+<body>
+<h1>hi baby</h1>
+<sf-player video="demo.mp4"></sf-player>
+
+<script type="module">
+    import { Streamforge } from "./hls/core/streamforge.js";
+    import "./hls/core/sfplayer.js";
+    Streamforge.init({
+        endpoint: "http://localhost:3000"
+    });
+</script>
+
+</body>
+</html>

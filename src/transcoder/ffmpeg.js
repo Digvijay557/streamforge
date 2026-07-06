@@ -3,6 +3,7 @@ const fs = require('fs')
 const {exec} = require('child_process');
 const path = require('path');
 const { createMasterPlaylist } = require('./hls');
+const { rewritePlaylist } = require('./rewrite');
 
 
 function planQualities(height) {
@@ -45,9 +46,14 @@ async function generateHLSforQuality(videoPath, quality, outputDir) {
         -preset veryfast
         -crf 23
         -c:a aac
+
         -hls_time 6
         -hls_playlist_type vod
-        -hls_segment_filename "${path.join(outputDir, "segment_%03d.ts")}"
+
+        -hls_segment_type fmp4
+        -hls_fmp4_init_filename "${path.join(outputDir, "init.mp4")}"
+        -hls_segment_filename "${path.join(outputDir, "segment_%03d.m4s")}"
+
         "${path.join(outputDir, "index.m3u8")}"
     `.replace(/\s+/g, " ").trim();
 
@@ -68,7 +74,6 @@ async function generateHLSforQuality(videoPath, quality, outputDir) {
 
     });
 }
-
 
 
 
@@ -101,10 +106,27 @@ module.exports.generateHLS = async function (filepath) {
             quality,
             outputDir
         );
+        
 
         console.log(`✅ ${quality}p generated`);
+
+
+
+        await rewritePlaylist(
+            path.join(outputDir, "index.m3u8"),
+            videoName,
+            `${quality}p`
+        );
+
+
+        console.log(`✅ ${quality}p regenerated`);
     }
     createMasterPlaylist(videoName,qualities)
+
+    await rewritePlaylist(
+    path.join(".streamforge", videoName, "master.m3u8"),
+    videoName
+);
 
     console.log("🎉 All qualities generated.");
 }

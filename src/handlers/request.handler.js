@@ -2,35 +2,23 @@ const path = require("path");
 const { exists } = require("../storage/local.storage");
 const { generateHLS } = require("../transcoder/ffmpeg");
 const fs = require("fs");
+const videoHandler = require("./video.handler");
+const cacheHandler = require("./cache.handler");
 
 async function requesthandler(req, res, next, config = {}) {
-    if (!req.path.endsWith(".mp4")) {
-        return next();
-    }
-    console.log("config:", config);
-    const result = await exists(req.url);
-    console.log("result:", result)
-    console.log(result);
-    if (!result.status) {
-        console.log(path.join(config.source, result.vidsrc));
-        
-        await generateHLS(path.join(config.source, result.vidsrc));
-        const fullPath = path.resolve(result.requestedFile);
+    console.log("URL:", req.url);
+console.log("Cache?", isCacheRequest(req.url));
+    if (isCacheRequest(req.url)) {
+            return cacheHandler(req, res, config);
+        }
+    return videoHandler(req, res,config);
 
-console.log(fullPath);
-console.log("Exists:", fs.existsSync(fullPath));
+    
+}
 
-return res.sendFile(fullPath, {
-    dotfiles: "allow"
-});
-    }
 
-   return res.sendFile(
-    path.resolve(result.requestedFile),
-    {
-        dotfiles: "allow"
-    }
-);
+function isCacheRequest(url) {
+    return url.startsWith("/stream/");
 }
 
 module.exports = requesthandler;
