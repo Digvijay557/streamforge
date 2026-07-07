@@ -10,15 +10,24 @@ async function getVideoInfo(videoPath) {
         exec(command, (error, stdout, stderr) => {
 
             if (error) {
-                return reject(error);
-            }
+                    console.error("[StreamForge] ffprobe failed:");
+                    console.error(stderr);
+
+                    return reject(error);
+                }
 
             try {
-                if (!stdout) return reject(new Error('ffprobe returned no output'));
+                if  (!stdout.trim())return reject(new Error('ffprobe returned no output'));
 
                 const info = JSON.parse(stdout);
                 const video = (info.streams || []).find(stream => stream.codec_type === 'video') || null;
                 const audio = (info.streams || []).find(stream => stream.codec_type === 'audio') || null;
+
+                if (!video && !audio) {
+    return reject(
+        new Error("Video or audio stream not found.")
+    );
+}
 
                 resolve({
                     video,
@@ -26,8 +35,9 @@ async function getVideoInfo(videoPath) {
                     format: info.format || null
                 });
             } catch (err) {
-                reject(err);
-            }
+    console.error("[StreamForge] Invalid ffprobe JSON output");
+    reject(err);
+}
 
         });
 

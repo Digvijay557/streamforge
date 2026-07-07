@@ -4,6 +4,20 @@ import { Streamforge } from "./streamforge.js";
 import { MediaEngine } from "../media/mediaengine.js"
 import { SegmentLoader } from "../loader/medialoader.js"
 
+// ==========================================================
+// Structured error type — mirrors the error-class pattern
+// used in generateHLS.js so failures are inspectable by
+// code (err.code) instead of just by message string.
+// ==========================================================
+class SFPlayerError extends Error {
+    constructor(message, code, cause) {
+        super(message);
+        this.name = "SFPlayerError";
+        this.code = code || "UNKNOWN";
+        if (cause) this.cause = cause;
+    }
+}
+
 class SFPlayer extends HTMLElement {
 
     // ==========================================================
@@ -15,7 +29,75 @@ class SFPlayer extends HTMLElement {
         this.controlsTimeout = null;
         this.loaded = false;
         this.network = new Network();
+        this.attachShadow({ mode: "open" });
+        this.root = this.shadowRoot;
+        
+    }
+
+    disconnectedCallback() {
+        // Prevent keydown listener leak — every mounted <sf-player>
+        // was previously stacking a global document listener that
+        // never got cleaned up.
+        if (this._onKeydown) {
+            document.removeEventListener("keydown", this._onKeydown);
+        }
+        clearTimeout(this.controlsTimeout);
+
+        if (this.video && this._onTimeUpdate) {
+            this.video.removeEventListener("timeupdate", this._onTimeUpdate);
+        }
+    }
+
+
+    connectedCallback() {
         this.init();
+    }
+
+    // ==========================================================
+    // Network helper — wraps this.network.request() so every
+    // caller gets consistent error handling instead of letting
+    // raw fetch/Network errors bubble up unformatted.
+    // ==========================================================
+
+    async #request(url, context) {
+        if (!url) {
+            throw new SFPlayerError(
+                `Missing URL while requesting ${context}`,
+                "NO_SOURCE"
+            );
+        }
+
+        let response;
+        try {
+            response = await this.network.request(url);
+        } catch (err) {
+            throw new SFPlayerError(
+                `Network request failed while requesting ${context}: ${err.message}`,
+                "NETWORK_FAILURE",
+                err
+            );
+        }
+
+        if (response && response.ok === false) {
+            throw new SFPlayerError(
+                `Server returned an error (${response.status || "unknown status"}) while requesting ${context}`,
+                "HTTP_ERROR"
+            );
+        }
+
+        return response;
+    }
+
+    #parsePlaylistSafe(text, context) {
+        try {
+            return parsePlaylist(text);
+        } catch (err) {
+            throw new SFPlayerError(
+                `Failed to parse ${context}: ${err.message}`,
+                "PARSE_FAILURE",
+                err
+            );
+        }
     }
 
     async load() {
@@ -24,7 +106,14 @@ class SFPlayer extends HTMLElement {
         // Get Video Source
         // ==========================================================
 
-        const video = this.getAttribute("video");//gets what inside <sf-player video = "demo.mp4" />
+        const video = this.getAttribute("video");
+
+        if (!video) {
+            throw new SFPlayerError(
+                "No 'video' attribute set on <sf-player>",
+                "NO_SOURCE"
+            );
+        }
 
         // ==========================================================
         // Request Master Playlist
@@ -32,17 +121,9 @@ class SFPlayer extends HTMLElement {
 
         console.log("① Requesting master playlist");
 
-        const masterResponse =
-            await this.network.request(video);//runs backend(ffmpeg, hls generation) and return master.m3u8 as responce  
-
-        const masterPlaylist =
-            parsePlaylist(await masterResponse.text());//parses string into a json 
-//             export class MasterPlaylist {
-//     constructor() {
-//         this.version = null;
-//         this.variants = [];
-//     }
-// }
+        const masterResponse = await this.#request(video, "master playlist");
+        const masterText = await masterResponse.text();
+        const masterPlaylist = this.#parsePlaylistSafe(masterText, "master playlist");
 
         console.log(masterPlaylist);
 
@@ -50,16 +131,27 @@ class SFPlayer extends HTMLElement {
         // Request Variant Playlist
         // ==========================================================
 
+        const variant = masterPlaylist.variants?.[0];
+
+        if (!variant || !variant.uri) {
+            throw new SFPlayerError(
+                "Master playlist has no playable variants",
+                "NO_VARIANTS"
+            );
+        }
+
         console.log("② Requesting variant playlist");
 
-        const variant =
-            masterPlaylist.variants[0];//selects the first quality 
+        const variantResponse = await this.#request(variant.uri, "variant playlist");
+        const variantText = await variantResponse.text();
+        const variantPlaylist = this.#parsePlaylistSafe(variantText, "variant playlist");
 
-        const variantResponse =
-            await this.network.request(variant.uri); // fetches index.m3u8
-
-        const variantPlaylist =
-            parsePlaylist(await variantResponse.text());
+        if (!variantPlaylist.segments || variantPlaylist.segments.length === 0) {
+            throw new SFPlayerError(
+                "Variant playlist has no segments",
+                "NO_SEGMENTS"
+            );
+        }
 
         this.variantPlaylist = variantPlaylist;
 
@@ -70,20 +162,26 @@ class SFPlayer extends HTMLElement {
         // ==========================================================
 
         if (!this.media) {
-            this.media = new MediaEngine(this.video);//develops a new kitchen to cook the binary data into a video
-            await this.media.ready();
+            try {
+                this.media = new MediaEngine(this.video);
+                await this.media.ready();
+            } catch (err) {
+                this.media = null;
+                throw new SFPlayerError(
+                    `Failed to initialize media engine: ${err.message}`,
+                    "MEDIA_INIT_FAILURE",
+                    err
+                );
+            }
         }
 
         // ==========================================================
         // Set Total Duration on MediaSource
         // ==========================================================
-        // MediaSource does not infer duration from appended segments —
-        // it must be told explicitly, or video.duration stays NaN forever
-        // and any seek math (percent * duration) will crash.
 
         const totalDuration = variantPlaylist.segments.reduce(
             (sum, seg) => sum + seg.duration, 0
-        );//gets total duration
+        );
 
         if (typeof this.media.setDuration === "function") {
             this.media.setDuration(totalDuration);
@@ -99,15 +197,26 @@ class SFPlayer extends HTMLElement {
 
         console.log("③ Requesting init segment");
 
-        const initResponse =
-            await this.network.request(
-                variantPlaylist.initSegment
-            );//request first element from backend 
+        if (!variantPlaylist.initSegment) {
+            throw new SFPlayerError(
+                "Variant playlist has no init segment",
+                "NO_INIT_SEGMENT"
+            );
+        }
 
-        const initBytes =
-            await initResponse.arrayBuffer();
+        const initResponse = await this.#request(variantPlaylist.initSegment, "init segment");
 
-        await this.media.append(initBytes);
+        let initBytes;
+        try {
+            initBytes = await initResponse.arrayBuffer();
+            await this.media.append(initBytes);
+        } catch (err) {
+            throw new SFPlayerError(
+                `Failed to append init segment: ${err.message}`,
+                "INIT_SEGMENT_FAILURE",
+                err
+            );
+        }
 
         // ==========================================================
         // Set Up Segment Loader
@@ -115,13 +224,16 @@ class SFPlayer extends HTMLElement {
 
         console.log("④ Setting up Segment Loader");
 
-        this.segmentLoader =
-            new SegmentLoader(
-                this.network,
-                this.media
-            );//creates a segment loader with network and media of this video
-
-        this.segmentLoader.setPlaylist(variantPlaylist);
+        try {
+            this.segmentLoader = new SegmentLoader(this.network, this.media);
+            this.segmentLoader.setPlaylist(variantPlaylist);
+        } catch (err) {
+            throw new SFPlayerError(
+                `Failed to initialize segment loader: ${err.message}`,
+                "SEGMENT_LOADER_INIT_FAILURE",
+                err
+            );
+        }
 
         // ==========================================================
         // Load First Segment
@@ -131,14 +243,26 @@ class SFPlayer extends HTMLElement {
 
         this.loadedDuration = 0;
 
-        const firstSegmentDuration =
-            variantPlaylist.segments[0].duration;
+        const firstSegmentDuration = variantPlaylist.segments[0].duration;
 
-        const firstLoaded =
-            await this.segmentLoader.loadNext();
+        let firstLoaded;
+        try {
+            firstLoaded = await this.segmentLoader.loadNext();
+        } catch (err) {
+            throw new SFPlayerError(
+                `Failed to load first segment: ${err.message}`,
+                "SEGMENT_LOAD_FAILURE",
+                err
+            );
+        }
 
         if (firstLoaded) {
             this.loadedDuration += firstSegmentDuration;
+        } else {
+            throw new SFPlayerError(
+                "First segment failed to load",
+                "SEGMENT_LOAD_FAILURE"
+            );
         }
 
         // ==========================================================
@@ -169,21 +293,43 @@ class SFPlayer extends HTMLElement {
 
             if (!nextSegment) return; // playlist ended, nothing left to load
 
-            const loaded = await this.segmentLoader.loadNext();
+            try {
+                const loaded = await this.segmentLoader.loadNext();
 
-            if (loaded) {
-                this.loadedDuration += nextSegment.duration;
+                if (loaded) {
+                    this.loadedDuration += nextSegment.duration;
+                } else {
+                    // Loader returned false without throwing — treat as a
+                    // recoverable miss, don't kill playback, just log and
+                    // let the next timeupdate tick retry.
+                    console.warn(`⚠️ Segment ${nextIndex} failed to load, will retry`);
+                }
+            } catch (err) {
+                // This previously would have been an unhandled promise
+                // rejection inside an event listener — the video would
+                // just silently stall with nothing in the console tying
+                // it back to a cause.
+                console.error(`❌ Error loading segment ${nextIndex}:`, err);
+                this.#handleFatalError(
+                    new SFPlayerError(
+                        `Playback stalled: failed to load segment ${nextIndex}`,
+                        "SEGMENT_LOAD_FAILURE",
+                        err
+                    )
+                );
             }
 
         };
 
         this.video.addEventListener("timeupdate", this._onTimeUpdate);
 
+        this.dispatchEvent(new CustomEvent("sf-ready", {
+            detail: { duration: totalDuration }
+        }));
     }
 
     init() {
-        this.attachShadow({ mode: "open" });
-        this.root = this.shadowRoot;
+        
 
         this.render();
     }
@@ -295,6 +441,11 @@ class SFPlayer extends HTMLElement {
                 font-size: 18px;
             }
 
+            button:disabled {
+                opacity: .5;
+                cursor: not-allowed;
+            }
+
             .sf-time{
                 font-size:14px;
             }
@@ -323,6 +474,26 @@ class SFPlayer extends HTMLElement {
 
     border-radius:999px;
 }
+
+.sf-error {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+
+    padding: 10px 14px;
+
+    background: rgba(185, 28, 28, .92);
+    color: white;
+    font-size: 13px;
+    line-height: 1.4;
+
+    z-index: 5;
+}
+
+.sf-error.hidden {
+    display: none;
+}
         </style>
     `;
     }
@@ -330,6 +501,8 @@ class SFPlayer extends HTMLElement {
     #renderHTML() {
         return `
             <div class="sf-player">
+
+    <div class="sf-error hidden"></div>
 
     <video></video>
 
@@ -394,6 +567,7 @@ class SFPlayer extends HTMLElement {
         this.video = this.root.querySelector("video");
 
         this.controls = this.root.querySelector(".sf-controls");
+        this.errorBanner = this.root.querySelector(".sf-error");
 
         this.progress = this.root.querySelector(".sf-progress");
         this.progressPlayed = this.root.querySelector(".sf-progress-played");
@@ -428,7 +602,39 @@ class SFPlayer extends HTMLElement {
 
         if (video) {
             this.video.src = video;
+        } else {
+            console.warn("⚠️ <sf-player> mounted without a 'video' attribute — load() will fail until one is set.");
         }
+    }
+
+    // ==========================================================
+    // Error UI
+    // ==========================================================
+
+    #handleFatalError(error) {
+        const sfError = error instanceof SFPlayerError
+            ? error
+            : new SFPlayerError(error?.message || "Unknown player error", "UNKNOWN", error);
+
+        console.error(`[SFPlayer] ${sfError.code}: ${sfError.message}`, sfError.cause || "");
+
+        this.#showError(sfError.message);
+
+        this.dispatchEvent(new CustomEvent("sf-error", {
+            detail: { code: sfError.code, message: sfError.message, cause: sfError.cause }
+        }));
+    }
+
+    #showError(message) {
+        if (!this.errorBanner) return;
+        this.errorBanner.textContent = message;
+        this.errorBanner.classList.remove("hidden");
+    }
+
+    #clearError() {
+        if (!this.errorBanner) return;
+        this.errorBanner.textContent = "";
+        this.errorBanner.classList.add("hidden");
     }
 
     // ==========================================================
@@ -440,13 +646,26 @@ class SFPlayer extends HTMLElement {
         this.playBtn.addEventListener("click", async () => {
 
             if (!this.loaded) {
+
+                this.playBtn.disabled = true;
+                this.#clearError();
+
                 try {
                     await this.load();
                     this.loaded = true;
                 } catch (error) {
                     console.error(error);
+                    this.#handleFatalError(error);
                     return;
+                } finally {
+                    this.playBtn.disabled = false;
                 }
+
+                // load() already starts playback via #safePlay(). Falling
+                // through to #togglePlay() here would immediately pause
+                // the video that was just started — that was a real bug
+                // in the previous version.
+                return;
             }
 
             this.#togglePlay();
@@ -471,6 +690,11 @@ class SFPlayer extends HTMLElement {
             this.#updateProgress();
         });
 
+        this.video.addEventListener("error", () => {
+            const mediaError = this.video.error;
+            
+        });
+
         this.volumeBtn.addEventListener("click", () => {
             this.#toggleMute();
         });
@@ -491,9 +715,11 @@ class SFPlayer extends HTMLElement {
             this.#resetControlsTimer();
         });
 
-        document.addEventListener("keydown", (event) => {
-            this.#handleKeyboard(event);
-        });
+        // Store the bound reference so it can be removed in
+        // disconnectedCallback() — previously this leaked one
+        // global document listener per mounted <sf-player>.
+        this._onKeydown = (event) => this.#handleKeyboard(event);
+        document.addEventListener("keydown", this._onKeydown);
 
     }
 
@@ -512,12 +738,25 @@ class SFPlayer extends HTMLElement {
     // Wraps video.play() so a race with pause() doesn't throw an
     // unhandled promise rejection into the console.
     #safePlay() {
-        const playPromise = this.video.play();
+        let playPromise;
+
+        try {
+            playPromise = this.video.play();
+        } catch (err) {
+            // play() can throw synchronously (e.g. no supported source).
+            this.#handleFatalError(
+                new SFPlayerError(`Playback failed to start: ${err.message}`, "PLAYBACK_FAILURE", err)
+            );
+            return;
+        }
 
         if (playPromise && typeof playPromise.catch === "function") {
             playPromise.catch(err => {
                 if (err.name !== "AbortError") {
                     console.error("Playback error:", err);
+                    this.#handleFatalError(
+                        new SFPlayerError(`Playback failed: ${err.message}`, "PLAYBACK_FAILURE", err)
+                    );
                 }
             });
         }
@@ -531,7 +770,10 @@ class SFPlayer extends HTMLElement {
         const current = this.video.currentTime;
         const duration = this.video.duration;
 
-        const percent = duration ? (current / duration) * 100 : 0;
+        const percent = (Number.isFinite(duration) && duration > 0)
+            ? (current / duration) * 100
+            : 0;
+
         this.progressPlayed.style.width = `${percent}%`;
 
         this.time.textContent =
@@ -539,6 +781,10 @@ class SFPlayer extends HTMLElement {
     }
 
     #findSegmentIndexForTime(time) {
+        if (!this.variantPlaylist || !this.variantPlaylist.segments?.length) {
+            return 0;
+        }
+
         let elapsed = 0;
         const segments = this.variantPlaylist.segments;
 
@@ -610,7 +856,17 @@ class SFPlayer extends HTMLElement {
                 this.video.currentTime = targetTime;
             } else {
                 console.error("❌ Seek failed — could not load target segment");
+                this.#handleFatalError(
+                    new SFPlayerError("Seek failed — could not load target segment", "SEEK_FAILURE")
+                );
             }
+        } catch (err) {
+            // Previously uncaught — a network blip mid-seek would throw
+            // out of an async event handler with no user-visible signal.
+            console.error("❌ Seek error:", err);
+            this.#handleFatalError(
+                new SFPlayerError(`Seek failed: ${err.message}`, "SEEK_FAILURE", err)
+            );
         } finally {
             this.#setSeekingUI(false);
         }
@@ -625,10 +881,21 @@ class SFPlayer extends HTMLElement {
             return;
         }
 
+        if (!isFinite(this.video.duration) || this.video.duration <= 0) {
+            console.warn("⚠️ Seek ignored — duration not available yet");
+            return;
+        }
+
         const percent = Math.max(0, Math.min(x / rect.width, 1));
         const targetTime = percent * this.video.duration;
 
-        await this.#performSeek(targetTime);
+        try {
+            await this.#performSeek(targetTime);
+        } catch (err) {
+            // Safety net — #performSeek handles its own errors internally,
+            // this only fires on something truly unexpected.
+            console.error("Unexpected seek error:", err);
+        }
     }
 
     #setSeekingUI(isSeeking) {
@@ -657,6 +924,12 @@ class SFPlayer extends HTMLElement {
 
     #setVolume(e) {
         const rect = this.volumeSlider.getBoundingClientRect();
+
+        if (rect.width === 0) {
+            console.warn("⚠️ Volume change ignored — slider has zero width");
+            return;
+        }
+
         let percent = (e.clientX - rect.left) / rect.width;
         percent = Math.max(0, Math.min(1, percent));
 
@@ -676,10 +949,26 @@ class SFPlayer extends HTMLElement {
     // ==========================================================
 
     #toggleFullscreen() {
-        if (!document.fullscreenElement) {
-            this.requestFullscreen();
-        } else {
-            document.exitFullscreen();
+        try {
+            if (!document.fullscreenElement) {
+                const req = this.requestFullscreen();
+                if (req && typeof req.catch === "function") {
+                    req.catch(err => {
+                        console.warn("⚠️ Could not enter fullscreen:", err.message);
+                    });
+                }
+            } else {
+                const exit = document.exitFullscreen();
+                if (exit && typeof exit.catch === "function") {
+                    exit.catch(err => {
+                        console.warn("⚠️ Could not exit fullscreen:", err.message);
+                    });
+                }
+            }
+        } catch (err) {
+            // requestFullscreen/exitFullscreen can throw synchronously
+            // (e.g. SecurityError if not triggered by a user gesture).
+            console.warn("⚠️ Fullscreen toggle failed:", err.message);
         }
     }
 
@@ -727,11 +1016,15 @@ class SFPlayer extends HTMLElement {
                 break;
 
             case "ArrowLeft":
-                this.#performSeek(this.video.currentTime - 5);
+                this.#performSeek(this.video.currentTime - 5).catch(err => {
+                    console.error("Unexpected seek error:", err);
+                });
                 break;
 
             case "ArrowRight":
-                this.#performSeek(this.video.currentTime + 5);
+                this.#performSeek(this.video.currentTime + 5).catch(err => {
+                    console.error("Unexpected seek error:", err);
+                });
                 break;
 
             case "ArrowUp":

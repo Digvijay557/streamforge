@@ -3,6 +3,8 @@ import { Streamforge } from "../core/streamforge.js";
 export default class Network {
 
     async request(path) {
+        if(!path) throw new Error("no path provided to request");
+        
 
         let url;
 

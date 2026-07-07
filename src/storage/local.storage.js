@@ -2,8 +2,6 @@ const fs = require("fs/promises");
 const path = require("path");
 
 async function exists(videoPath) {
-
-    // /videos/demo.mp4  -> demo
     const fileName = path.parse(videoPath).name;
 
     const requestedFile = path.join(
@@ -13,7 +11,6 @@ async function exists(videoPath) {
     );
 
     try {
-
         await fs.access(requestedFile);
 
         return {
@@ -23,7 +20,12 @@ async function exists(videoPath) {
             videoName: fileName
         };
 
-    } catch {
+    } catch (err) {
+
+        if (err.code !== "ENOENT") {
+            console.error("[StreamForge] Failed to access cache:", requestedFile);
+            console.error(err);
+        }
 
         return {
             status: false,
@@ -31,21 +33,10 @@ async function exists(videoPath) {
             requestedFile,
             videoName: fileName
         };
-
     }
-
-}
-
-function save(videoName, files) {
-
-}
-
-function read(videoName) {
-
 }
 
 module.exports = {
-    exists,
-    save,
-    read
+    exists
+    
 };

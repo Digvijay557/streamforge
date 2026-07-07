@@ -2,7 +2,21 @@ const fs = require("fs");
 
 module.exports.rewritePlaylist = function (filePath, videoName, quality = null) {
 
-    const content = fs.readFileSync(filePath, "utf8");
+
+    if (!filePath) {
+        throw new Error("filePath is required.");
+    }
+    if (!videoName) {
+        throw new Error("videoName is required.");
+    }
+    
+let content;
+    try {
+    content = fs.readFileSync(filePath, "utf8");
+} catch (err) {
+    console.error("[StreamForge] Failed to read playlist:", filePath);
+    throw err;
+}
 
     const lines = content.split("\n");
 
@@ -27,5 +41,10 @@ module.exports.rewritePlaylist = function (filePath, videoName, quality = null) 
 
     });
 
+    try {
     fs.writeFileSync(filePath, updated.join("\n"));
+} catch (err) {
+    console.error("[StreamForge] Failed to write playlist:", filePath);
+    throw err;
+}
 };

@@ -4,33 +4,37 @@ const { generateHLS } = require("../transcoder/ffmpeg");
 const fs = require("fs");
 
 async function videoHandler(req, res, config = {}) {
+    try {
+        const result = await exists(req.url);
 
+        if (!result.status) {
+            const sourcePath = path.join(config.source, result.vidsrc);
 
+            console.log("[StreamForge] Generating HLS:", sourcePath);
 
-    console.log("config:", config);
-    const result = await exists(req.url);
-    console.log("result:", result)
-    console.log(result);
-    if (!result.status) {
-        console.log(path.join(config.source, result.vidsrc));
-        
-        await generateHLS(path.join(config.source, result.vidsrc));
-        const fullPath = path.resolve(result.requestedFile);
+            await generateHLS(sourcePath);
 
-console.log(fullPath);
-console.log("Exists:", fs.existsSync(fullPath));
+            return res.sendFile(path.resolve(result.requestedFile), {
+                dotfiles: "allow"
+            });
+        }
 
-return res.sendFile(fullPath, {
-    dotfiles: "allow"
-});
+        return res.sendFile(path.resolve(result.requestedFile), {
+            dotfiles: "allow"
+        });
+
+    } catch (err) {
+        console.error("[StreamForge] Video Handler Error");
+        console.error(err);
+
+        if (!res.headersSent) {
+            return res.status(500).json({
+                error: "Internal Server Error"
+            });
+        }
+
+        res.destroy(err);
     }
-
-   return res.sendFile(
-    path.resolve(result.requestedFile),
-    {
-        dotfiles: "allow"
-    }
-);
 }
 
 module.exports = videoHandler;

@@ -2,10 +2,10 @@ const fs = require("fs");
 const path = require("path");
 
 async function cacheHandler(req, res, config = {}) {
-
-    console.log("📦 Cache Handler");
+    // console.log("📦 Cache Handler");
 
     const relativePath = req.url.replace("/stream/", "");
+    if (!relativePath) return false;
 
     const cacheFile = path.join(config.cache, relativePath);
 
@@ -21,7 +21,22 @@ async function cacheHandler(req, res, config = {}) {
         res.type("video/mp4");
     }
 
-    fs.createReadStream(cacheFile).pipe(res);
+    const stream = fs.createReadStream(cacheFile);
+    stream.on("error", (err) => {
+        console.error("Cache stream error:", err);
+
+        if (!res.headersSent) {
+            return res.status(500).json({
+                error: "Failed to read cached file."
+            });
+        }
+
+        res.destroy(err);
+    });
+    res.on("close", () => {
+        stream.destroy();
+    });
+    stream.pipe(res);
 }
 
 module.exports = cacheHandler;

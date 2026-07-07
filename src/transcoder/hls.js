@@ -2,7 +2,13 @@ const fs = require("fs");
 const path = require("path");
 
 function createMasterPlaylist(videoName, qualities) {
+    if (!videoName) {
+    throw new Error("No videoName provided.");
+}
 
+if (!Array.isArray(qualities) || qualities.length === 0) {
+    throw new Error("No qualities provided.");
+}
     let content = "#EXTM3U\n\n";
 
     const bandwidthMap = {
@@ -24,16 +30,27 @@ function createMasterPlaylist(videoName, qualities) {
     };
 
     for (const quality of qualities) {
+        if (!bandwidthMap[quality] || !resolutionMap[quality]) {
+                throw new Error(`Unsupported quality: ${quality}`);
+        }
 
         content += `#EXT-X-STREAM-INF:BANDWIDTH=${bandwidthMap[quality]},RESOLUTION=${resolutionMap[quality]}\n`;
         content += `${quality}p/index.m3u8\n\n`;
 
     }
+    try{
 
-    fs.writeFileSync(
-        path.join(".streamforge", videoName, "master.m3u8"),
-        content
-    );
+        
+        fs.writeFileSync(
+            path.join(".streamforge", videoName, "master.m3u8"),
+            content
+        );
+    }catch (err) {
+    console.error("[StreamForge] Failed to write master playlist.");
+    console.error(err);
+
+    throw new Error("Failed to create master.m3u8.");
+}
 }
 
 module.exports = {
