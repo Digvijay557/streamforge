@@ -33,9 +33,37 @@ StreamForge automates the full video streaming pipeline — from ingest to adapt
 
 ## Roadmap
 
-- [ ] Multi-bitrate adaptive streaming
-- [ ] CDN-friendly caching layer
-- [ ] Analytics hooks
+<h3>✅ v0.1</h3>
+<ul>
+  <li>HLS Generation</li>
+  <li>Media Engine</li>
+  <li>Segment Loader</li>
+  <li>Seeking</li>
+  <li>Progress Bar</li>
+  <li>Error Handling</li>
+</ul>
+
+<h3>🚧 v0.2</h3>
+<ul>
+  <li>Retry Failed Segments</li>
+  <li>Better Scheduler</li>
+  <li>Buffer Manager</li>
+  <li>Buffer Progress Indicator</li>
+  <li>Manual Quality Selection</li>
+  <li>Playback Speed</li>
+  <li>Picture-in-Picture</li>
+  <li>Loading Spinner</li>
+  <li>Generation Progress UI</li>
+</ul>
+
+<h3>🔮 Future</h3>
+<ul>
+  <li>Adaptive Bitrate (ABR)</li>
+  <li>CDN Support</li>
+  <li>Cloud Storage</li>
+  <li>Player Themes</li>
+  <li>Headless Player</li>
+</ul>
 
 ## Contributing
 
