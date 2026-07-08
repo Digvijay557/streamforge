@@ -1,2 +1,46 @@
-# steamforge
-<div class="tenor-gif-embed" data-postid="25139201" data-share-method="host" data-aspect-ratio="0.8" data-width="100%"><a href="https://tenor.com/view/thor-thor-infinity-war-gif-25139201">Thor Thor Infinity War GIF</a>from <a href="https://tenor.com/search/thor-gifs">Thor GIFs</a></div> <script type="text/javascript" async src="https://tenor.com/embed.js"></script>
+<h1 align="center">StreamForge</h1>
+
+<p align="center">
+  An end-to-end video streaming middleware for Express.js, paired with a modern custom web video player.
+</p>
+
+<p align="center">
+  <img src="./assets/demo.gif" width="900" alt="StreamForge Demo">
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/status-under%20active%20development-orange" alt="Status">
+  <img src="https://img.shields.io/badge/node-Express.js-000000?logo=express" alt="Express">
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
+</p>
+
+> 🚧 **StreamForge is currently under active development.** APIs and internals are subject to change.
+
+## Overview
+
+StreamForge automates the full video streaming pipeline — from ingest to adaptive playback — as a drop-in Express.js middleware, complete with a custom `sf-player` web component built for modern HLS/fMP4 delivery.
+
+## Features
+
+- 🎬 **Automatic HLS generation** — converts source video into HLS streams with no manual setup
+- 📦 **fMP4 segmented streaming** — modern, efficient segment format
+- ⚙️ **On-demand transcoding** — transcodes only when a stream is requested
+- 🧩 **Custom `sf-player` web component** — lightweight, framework-agnostic player built on the Media Source Extensions API
+- ⏩ **Seeking support** — accurate seek handling across segments
+- 📊 **Progress bar** — built-in playback progress UI
+- 🧹 **Automatic cleanup** — removes stale transcoded assets automatically
+- 🛡️ **Production-grade error handling** — structured error classes and failure paths throughout the pipeline
+
+## Roadmap
+
+- [ ] Multi-bitrate adaptive streaming
+- [ ] CDN-friendly caching layer
+- [ ] Analytics hooks
+
+## Contributing
+
+Contributions, issues, and feature requests are welcome. This project is early-stage, so expect breaking changes — feedback is especially valuable right now.
+
+## License
+
+MIT
