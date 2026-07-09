@@ -16,6 +16,7 @@ export function parseMasterPlaylist(lines) {
         if (line.startsWith("#EXT-X-STREAM-INF:")) {
             const uri = lines[++i];
             parseStreamInf(line, uri, playlist);
+            parseStreamQualities(uri, playlist);
         }
     }
 
@@ -36,6 +37,9 @@ function parseStreamInf(line, uri, playlist) {
             uri
         })
     );
+}
+function parseStreamQualities(uri,playlist){
+    playlist.qualities.push(Number(uri.split("/")[4]))
 }
 
 function parseAttributes(line) {

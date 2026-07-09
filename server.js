@@ -1,7 +1,7 @@
 // server.js
 
 const express = require("express");
-const streamforge = require("./src/index"); // Change this if your entry file is different
+const streamforge = require("./src/streamforge"); // Change this if your entry file is different
 
 const app = express();
 

@@ -35,7 +35,7 @@ if (!Array.isArray(qualities) || qualities.length === 0) {
         }
 
         content += `#EXT-X-STREAM-INF:BANDWIDTH=${bandwidthMap[quality]},RESOLUTION=${resolutionMap[quality]}\n`;
-        content += `${quality}p/index.m3u8\n\n`;
+        content += `${quality}/index.m3u8\n\n`;
 
     }
     try{

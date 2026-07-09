@@ -4,6 +4,7 @@ export class MasterPlaylist {
     constructor() {
         this.version = null;
         this.variants = [];
+        this.qualities = [];
     }
 }
 

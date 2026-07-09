@@ -105,9 +105,9 @@ async function generateHLSforQuality(videoPath, quality, outputDir) {
                         return reject(new Error('ffmpeg binary not found on PATH'));
                     }
                     if (error.killed && error.signal === 'SIGKILL') {
-                        return reject(new Error(`ffmpeg timed out after ${FFMPEG_TIMEOUT_MS}ms for ${quality}p`));
+                        return reject(new Error(`ffmpeg timed out after ${FFMPEG_TIMEOUT_MS}ms for ${quality}`));
                     }
-                    return reject(new Error(`ffmpeg exited with code ${error.code} for ${quality}p: ${stderr?.slice(-2000)}`));
+                    return reject(new Error(`ffmpeg exited with code ${error.code} for ${quality}: ${stderr?.slice(-2000)}`));
                 }
                 resolve({ stdout, stderr });
             }
@@ -143,14 +143,14 @@ module.exports.generateHLS = async function generateHLS(filepath) {
 
     try {
         for (const quality of qualities) {
-            const outputDir = path.join(videoRoot, `${quality}p`);
+            const outputDir = path.join(videoRoot, `${quality}`);
 
             await generateHLSforQuality(filepath, quality, outputDir);
 
             await rewritePlaylist(
                 path.join(outputDir, 'index.m3u8'),
                 videoName,
-                `${quality}p`
+                `${quality}`
             );
         }
 

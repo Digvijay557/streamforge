@@ -2,7 +2,7 @@ import { parsePlaylist } from "../parser/Parser.js";
 import Network from "../network/Network.js";
 import { Streamforge } from "./streamforge.js";
 import { MediaEngine } from "../media/mediaengine.js"
-import { SegmentLoader } from "../loader/medialoader.js"
+import { SegmentLoader } from "../media/medialoader.js"
 
 // ==========================================================
 // Structured error type — mirrors the error-class pattern
@@ -15,6 +15,7 @@ class SFPlayerError extends Error {
         this.name = "SFPlayerError";
         this.code = code || "UNKNOWN";
         if (cause) this.cause = cause;
+        this.internalSeek = false;
     }
 }
 
@@ -31,6 +32,10 @@ class SFPlayer extends HTMLElement {
         this.network = new Network();
         this.attachShadow({ mode: "open" });
         this.root = this.shadowRoot;
+        this.masterPlaylist ={};
+        this.qualities = []
+        this.playbackSpeed = 1;
+
         
     }
 
@@ -51,6 +56,7 @@ class SFPlayer extends HTMLElement {
 
     connectedCallback() {
         this.init();
+
     }
 
     // ==========================================================
@@ -123,15 +129,26 @@ class SFPlayer extends HTMLElement {
 
         const masterResponse = await this.#request(video, "master playlist");
         const masterText = await masterResponse.text();
-        const masterPlaylist = this.#parsePlaylistSafe(masterText, "master playlist");
-
-        console.log(masterPlaylist);
-
+        this.masterPlaylist = this.#parsePlaylistSafe(masterText, "master playlist");
+        this.qualities = this.masterPlaylist.qualities.map((q, i) => ({
+        index: i,
+        quality: q
+        }));
+    console.log(this.qualities);
+            console.log(this.masterPlaylist);
+        this.insertQualities()
         // ==========================================================
         // Request Variant Playlist
         // ==========================================================
+        
+        this.playQuality(0,false)
 
-        const variant = masterPlaylist.variants?.[0];
+    }
+
+    async playQuality(varientIndex, loaded){
+        this.isSwitchingQuality = true;
+        
+         const variant = this.masterPlaylist.variants?.[varientIndex];
 
         if (!variant || !variant.uri) {
             throw new SFPlayerError(
@@ -141,29 +158,32 @@ class SFPlayer extends HTMLElement {
         }
 
         console.log("② Requesting variant playlist");
-
+        
         const variantResponse = await this.#request(variant.uri, "variant playlist");
         const variantText = await variantResponse.text();
         const variantPlaylist = this.#parsePlaylistSafe(variantText, "variant playlist");
-
+        
         if (!variantPlaylist.segments || variantPlaylist.segments.length === 0) {
             throw new SFPlayerError(
                 "Variant playlist has no segments",
                 "NO_SEGMENTS"
             );
         }
-
+        
         this.variantPlaylist = variantPlaylist;
-
+        
         console.log(variantPlaylist);
-
+        let totalDuration;
+        console.log(loaded);
+        
+        
         // ==========================================================
         // Initialize Media Engine
         // ==========================================================
-
+        
         if (!this.media) {
             try {
-                this.media = new MediaEngine(this.video);
+                if(!loaded)this.media = new MediaEngine(this.video);
                 await this.media.ready();
             } catch (err) {
                 this.media = null;
@@ -179,7 +199,7 @@ class SFPlayer extends HTMLElement {
         // Set Total Duration on MediaSource
         // ==========================================================
 
-        const totalDuration = variantPlaylist.segments.reduce(
+         totalDuration = variantPlaylist.segments.reduce(
             (sum, seg) => sum + seg.duration, 0
         );
 
@@ -190,7 +210,7 @@ class SFPlayer extends HTMLElement {
                 "⚠️ MediaEngine has no setDuration() — add one, or video.duration will stay NaN and seeking will break."
             );
         }
-
+        
         // ==========================================================
         // Request & Append Init Segment
         // ==========================================================
@@ -203,7 +223,7 @@ class SFPlayer extends HTMLElement {
                 "NO_INIT_SEGMENT"
             );
         }
-
+        
         const initResponse = await this.#request(variantPlaylist.initSegment, "init segment");
 
         let initBytes;
@@ -221,30 +241,37 @@ class SFPlayer extends HTMLElement {
         // ==========================================================
         // Set Up Segment Loader
         // ==========================================================
-
+        
         console.log("④ Setting up Segment Loader");
+       try {
+    if (!this.segmentLoader) {
+        this.segmentLoader = new SegmentLoader(this.network, this.media);
+    }
 
-        try {
-            this.segmentLoader = new SegmentLoader(this.network, this.media);
-            this.segmentLoader.setPlaylist(variantPlaylist);
-        } catch (err) {
-            throw new SFPlayerError(
-                `Failed to initialize segment loader: ${err.message}`,
-                "SEGMENT_LOADER_INIT_FAILURE",
-                err
-            );
-        }
+    const currentSegment = this.segmentLoader.currentSegment;
 
+    this.segmentLoader.setPlaylist(variantPlaylist);
+    this.segmentLoader.seekToSegment(currentSegment);
+
+} catch (err) {
+    throw new SFPlayerError(
+        `Failed to initialize segment loader: ${err.message}`,
+        "SEGMENT_LOADER_INIT_FAILURE",
+        err
+    );
+}
         // ==========================================================
         // Load First Segment
         // ==========================================================
-
+        
+        if(!loaded){
+        
         console.log("⑤ Loading first segment");
-
+        
         this.loadedDuration = 0;
-
+        
         const firstSegmentDuration = variantPlaylist.segments[0].duration;
-
+        
         let firstLoaded;
         try {
             firstLoaded = await this.segmentLoader.loadNext();
@@ -252,10 +279,10 @@ class SFPlayer extends HTMLElement {
             throw new SFPlayerError(
                 `Failed to load first segment: ${err.message}`,
                 "SEGMENT_LOAD_FAILURE",
-                err
+                 err
             );
         }
-
+        
         if (firstLoaded) {
             this.loadedDuration += firstSegmentDuration;
         } else {
@@ -264,32 +291,60 @@ class SFPlayer extends HTMLElement {
                 "SEGMENT_LOAD_FAILURE"
             );
         }
-
+        
         // ==========================================================
         // Start Playback
         // ==========================================================
-
+        
         console.log("⑥ Starting playback");
-
+        
         this.#safePlay();
+    }
+        
+    // ==========================================================
+    // Wire Up timeupdate → loadNext()
+    // ==========================================================
 
-        // ==========================================================
-        // Wire Up timeupdate → loadNext()
-        // ==========================================================
+        this.dispatchEvent(new CustomEvent("sf-ready", {
+            detail: { duration: totalDuration }
+        }));
+        this.isSwitchingQuality = false;
+    }
+    
+    async #onTimeUpdate() {
+        if (this.isSwitchingQuality) return;
+        this.video.playbackRate = this.playbackSpeed;
+        this.PREFECT_BUFFER = 30; // seconds of lead time before loading next segment
+        
+        let bufferEnd = this.video.currentTime;
 
-        this.PREFETCH_THRESHOLD = 2; // seconds of lead time before loading next segment
+for (let i = 0; i < this.video.buffered.length; i++) {
+    const start = this.video.buffered.start(i);
+    const end = this.video.buffered.end(i);
 
-        this._onTimeUpdate = async () => {
+    if (
+        this.video.currentTime >= start &&
+        this.video.currentTime <= end
+    ) {
+        bufferEnd = end;
+        break;
+    }
+}
 
+        this.bufferedAhead = bufferEnd - this.video.currentTime;
+            console.log({
+                currentTime: this.video.currentTime,
+                bufferedAhead: this.bufferedAhead,
+                bufferTotal: this.video.buffered.length > 0 ? this.video.buffered.end(0) : 0
+            });
             if (this.segmentLoader.loading) return;
 
-            const remaining =
-                this.loadedDuration - this.video.currentTime;
+           
 
-            if (remaining > this.PREFETCH_THRESHOLD) return;
+            if (this.bufferedAhead > this.PREFECT_BUFFER) return;
 
             const nextIndex = this.segmentLoader.currentSegment;
-            const nextSegment = variantPlaylist.segments[nextIndex];
+            const nextSegment = this.variantPlaylist.segments[nextIndex]; 
 
             if (!nextSegment) return; // playlist ended, nothing left to load
 
@@ -321,17 +376,11 @@ class SFPlayer extends HTMLElement {
 
         };
 
-        this.video.addEventListener("timeupdate", this._onTimeUpdate);
-
-        this.dispatchEvent(new CustomEvent("sf-ready", {
-            detail: { duration: totalDuration }
-        }));
-    }
-
     init() {
         
 
         this.render();
+        this.video.addEventListener("timeupdate", () => this.#onTimeUpdate()); 
     }
 
     // ==========================================================
@@ -342,163 +391,378 @@ class SFPlayer extends HTMLElement {
         this.root.innerHTML = `
             ${this.#renderStyles()}
             ${this.#renderHTML()}
-        `;
-
-        this.#cacheElements();
-
-        this.#initializeAttributes();
-        this.#bindEvents();
+            `;
+            
+            
+            this.#cacheElements();
+            
+            this.#initializeAttributes();
+            this.#bindEvents();
+            console.log(this.video);
     }
 
-    #renderStyles() {
-        return `
-        <style>
-            :host {
-             --sf-accent: #FBBF24;
+  #renderStyles() {
+    return `
+    <style>
+      :host {
+        --sf-accent: #FBBF24;
+        --sf-accent-dim: #FBBF2433;
+        --sf-accent-glow: #FBBF2455;
+        --sf-bg: #0a0a0a;
+        --sf-radius: 16px;
+        --sf-transition: .2s cubic-bezier(.4,0,.2,1);
 
-                display: block;
-                width: 100%;
-            }
-            .sf-controls {
-                opacity: 1;
-                transition: opacity .25s ease;
-        }       
+        display: block;
+        width: 100%;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
 
-            .sf-controls.hidden {
-                opacity: 0;
-                pointer-events: none;
+      * { box-sizing: border-box; }
+
+      .sf-player {
+        position: relative;
+        width: 100%;
+        background: radial-gradient(120% 120% at 50% 0%, #161616 0%, #0a0a0a 70%);
+        border-radius: var(--sf-radius);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        box-shadow:
+          0 12px 40px rgba(0,0,0,.5),
+          0 0 0 1px rgba(255,255,255,.06);
+           aspect-ratio: 16 / 9;
+      }
+
+      video {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        z-index: 1;
+      }
+
+      /* ---------- Controls bar ---------- */
+
+      .sf-controls {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 2;
+
+        display: flex;
+        flex-direction: column;
+
+        background: linear-gradient(to top, rgba(0,0,0,.85), rgba(0,0,0,.4) 65%, transparent);
+        color: white;
+
+        opacity: 1;
+        transition: opacity .25s ease;
+      }
+
+      .sf-controls.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .sf-controls-bottom {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 16px 16px;
+      }
+
+      .sf-controls-left,
+      .sf-controls-right {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      /* ---------- Progress bar ---------- */
+
+      .sf-progress {
+        position: relative;
+        width: 100%;
+        height: 4px;
+        background: rgba(255, 255, 255, 0);
+        cursor: pointer;
+        transition: height var(--sf-transition);
+        transition: width 1s ease-in;
+      }
+
+      .sf-progress:hover { height: 7px; background: rgba(255, 255, 255, 0.45) }
+
+      .sf-progress-buffer {
+        position: absolute;
+        top: 0; left: 0; height: 100%;
+        width: 0%;
+        background: rgba(255, 255, 255, 0.7);
+        z-index: 1;
+        transition: width 1s ease-in;
+        border-radius:5px;
+      }
+
+      .sf-progress-played {
+        position: absolute;
+        top: 0; left: 0; height: 100%;
+        width: 0%;
+        background: var(--sf-accent);
+        box-shadow: 0 0 8px var(--sf-accent-glow);
+        z-index: 2;
+      }
+
+      .sf-progress-thumb {
+        position: absolute;
+        top: 50%; left: 0%;
+        width: 13px; height: 13px;
+        border-radius: 50%;
+        background: var(--sf-accent);
+        box-shadow: 0 0 0 5px var(--sf-accent-dim), 0 0 10px var(--sf-accent-glow);
+        transform: translate(-50%, -50%) scale(0);
+        transition: transform var(--sf-transition);
+        z-index: 3;
+        pointer-events: none;
+      }
+
+      .sf-progress:hover .sf-progress-thumb {
+        transform: translate(-50%, -50%) scale(1);
+      }
+
+      /* ---------- Buttons ---------- */
+
+      button {
+        background: transparent;
+        border: none;
+        color: white;
+        cursor: pointer;
+        font-size: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px;
+        border-radius: 8px;
+        opacity: .9;
+        transition: opacity var(--sf-transition), background var(--sf-transition), transform var(--sf-transition);
+      }
+
+      button:hover:not(:disabled) {
+        opacity: 1;
+        background: rgba(255,255,255,.1);
+        transform: scale(1.08);
+      }
+
+      button:active:not(:disabled) { transform: scale(.92); }
+
+      button:focus-visible {
+        outline: 2px solid var(--sf-accent);
+        outline-offset: 2px;
+      }
+
+      button:disabled { opacity: .4; cursor: not-allowed; }
+
+      .sf-time {
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+        opacity: .85;
+        letter-spacing: .2px;
+      }
+
+      /* ---------- Volume ---------- */
+
+      .sf-volume {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .sf-volume-slider {
+        width: 80px;
+        height: 4px;
+        background: rgba(255,255,255,.2);
+        border-radius: 999px;
+        cursor: pointer;
+        overflow: hidden;
+      }
+
+      .sf-volume-level {
+        width: 100%;
+        height: 100%;
+        background: var(--sf-accent);
+        box-shadow: 0 0 6px var(--sf-accent-glow);
+        border-radius: 999px;
+      }
+
+      /* ---------- Error banner ---------- */
+
+      .sf-error {
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        z-index: 5;
+
+        padding: 10px 14px;
+        background: rgba(185, 28, 28, .85);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        color: white;
+        font-size: 13px;
+        line-height: 1.4;
+        border-bottom: 1px solid rgba(255,255,255,.15);
+      }
+
+      .sf-error.hidden { display: none; }
+
+      /* ---------- Settings menu (the pop) ---------- */
+
+      .settings {
+        position: absolute;
+        bottom: 60px;
+        right: 12px;
+        z-index: 4;
+
+        width: 200px;
+        background: rgba(24, 24, 24, 0);
+    
+
+        display: flex;
+        // flex-direction: column;
+        gap:10px;
+
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(8px) scale(.97);
+        transform-origin: bottom right;
+        transition: opacity .2s ease, transform .2s cubic-bezier(.34,1.56,.64,1), visibility .2s ease;
+      }
+        .speedMenu{
+        background: rgba(24, 24, 24, 0);
+        backdrop-filter: blur(16px) saturate(160%);
+        -webkit-backdrop-filter: blur(16px) saturate(160%);
+        border: 1px solid rgba(255,255,255,.1);
+        border-radius: 12px;
+        padding: 10px;
+        box-shadow:
+          0 16px 40px rgba(0,0,0,.55),
+          0 0 0 1px rgba(255,255,255,.04) inset;
         }
-            .sf-player {
-                position: relative;
-                width: 100%;
-                background: #0f0f0f;
-                border-radius: 14px;
-                overflow: hidden;
-            }
 
-            video {
-                display: block;
-                width: 100%;
-                background: #000;
-            }
+      .settings.show {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0) scale(1);
+      }
 
-            .sf-controls {
-                position: absolute;
-                left: 0;
-                right: 0;
-                bottom: 0;
+      .settings-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        color: rgba(255,255,255,.45);
+        padding: 4px 8px 8px;
+      }
 
-                display: flex;
-                flex-direction: column;
+   .qualities {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: rgba(24, 24, 24, 0);
+        backdrop-filter: blur(16px) saturate(160%);
+        -webkit-backdrop-filter: blur(16px) saturate(160%);
+        border: 1px solid rgba(255,255,255,.1);
+        border-radius: 12px;
+        padding: 10px;
+        box-shadow:
+          0 16px 40px rgba(0,0,0,.55),
+          0 0 0 1px rgba(255,255,255,.04) inset;
 
-                background: linear-gradient(
-                    transparent,
-                    rgba(0,0,0,.5)
-                );
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
 
-                color: white;
-            }
+   transform: translateY(8px) scale(.97);
+transform-origin: left;
 
-            .sf-progress {
-                position: relative;
-                width: 100%;
-                height: 4px;
-                background: rgba(255,255,255,.2);
-                cursor: pointer;
-            }
-
-            .sf-progress-played {
-                width: 0%;
-                height: 100%;
-                background: #FBBF24;
-            }
-
-            .sf-progress-thumb,
-            .sf-progress-buffer{
-                display:none;
-            }
-
-            .sf-controls-bottom {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-
-                padding: 10px;
-            }
-
-            .sf-controls-left,
-            .sf-controls-right {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-            }
-
-            button {
-                background: transparent;
-                border: none;
-                color: white;
-                cursor: pointer;
-                font-size: 18px;
-            }
-
-            button:disabled {
-                opacity: .5;
-                cursor: not-allowed;
-            }
-
-            .sf-time{
-                font-size:14px;
-            }
-                .sf-volume{
-    display:flex;
-    align-items:center;
-    gap:8px;
+transition:
+    opacity .2s ease,
+    transform .2s cubic-bezier(.34,1.56,.64,1),
+    visibility .2s ease;
 }
 
-.sf-volume-slider{
-    width:80px;
-    height:4px;
 
-    background:rgba(255,255,255,.2);
 
-    border-radius:999px;
+      .quality {
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-size: 13px;
+        color: rgba(255,255,255,.8);
+        transition: background var(--sf-transition), color var(--sf-transition);
+      }
+        .speed{
+        display: flex;
+    flex-direction: column;
+    gap: 2px;
 
-    cursor:pointer;
-}
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
 
-.sf-volume-level{
-    width:100%;
-    height:100%;
+    transition: opacity .2s ease;
+        }
+   
+    
 
-    background:var(--sf-accent);
+      .quality:hover {
+        background: rgba(255,255,255,.08);
+        color: white;
+      }
 
-    border-radius:999px;
-}
+      .quality.active {
+        color: var(--sf-accent);
+        background: var(--sf-accent-dim);
+        font-weight: 600;
+      }
 
-.sf-error {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-
-    padding: 10px 14px;
-
-    background: rgba(185, 28, 28, .92);
-    color: white;
-    font-size: 13px;
-    line-height: 1.4;
-
-    z-index: 5;
-}
-
-.sf-error.hidden {
+      .quality.active::after {
+        content: "●";
+        font-size: 8px;
+        color: var(--sf-accent);
+        text-shadow: 0 0 6px var(--sf-accent-glow);
+      }
+    .sf-quality-btn{
+            cursor:pointer
+        }
+.sub-controlsM {
     display: none;
 }
-        </style>
-    `;
-    }
 
-    #renderHTML() {
+.sub-controlsM.show {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    
+
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+    .controls{
+    background: rgba(24, 24, 24, 0);
+        backdrop-filter: blur(16px) saturate(160%);
+        -webkit-backdrop-filter: blur(16px) saturate(160%);
+        border: 1px solid rgba(255,255,255,.1);
+        border-radius: 12px;
+        padding: 10px;
+        box-shadow:
+          0 16px 40px rgba(0,0,0,.55),
+          0 0 0 1px rgba(255,255,255,.04) inset;}
+    </style>
+    `;
+}
+
+   #renderHTML() {
         return `
             <div class="sf-player">
 
@@ -543,10 +807,33 @@ class SFPlayer extends HTMLElement {
     </div>
 
 </div>
+                <div class="sf-settings-wrap">
+                    <button class="sf-settings-btn">⚙</button>
 
-                <button class="sf-settings-btn">
-                    ⚙
-                </button>
+                    <div class="settings">
+                        <div class="controls">
+                            <button class="sf-quality-btn c" data-rmenu = "qualities">♾️ Quality</button>
+                            <button class="sf-speed-btn c" data-rmenu = "speedMenu">🚅 Speed</button>
+                            // <button class="sf-pip-btn c" data-rmenu = "pipmenu">🥕 Pic-in-Pic (PiP)</button>
+                        </div>
+                        <div class="sub-controls">
+                            <div class="qualities sub-controlsM">
+                                <div class="quality"></div>
+                            </div>
+                            <div class="speedMenu sub-controlsM" >
+                                <div class="speedx" data-speed = "2">2x</div>
+                                <div class="speedx" data-speed = "1.75">1.75x</div>
+                                <div class="speedx" data-speed = "1.5">1.5x</div>
+                                <div class="speedx" data-speed = "1.25">1.25x</div>
+                                <div class="speedx" data-speed = "1">1x</div>
+                                <div class="speedx" data-speed = "0.75">0.75x</div>
+                                <div class="speedx" data-speed = "0.5">0.5x</div>
+                                <div class="speedx" data-speed = "0.25">0.25x</div>
+                            </div>
+                        </div>
+                    </div>
+                
+                </div>
 
                 <button class="sf-fullscreen-btn">
                     ⛶
@@ -575,21 +862,30 @@ class SFPlayer extends HTMLElement {
         this.progressThumb = this.root.querySelector(".sf-progress-thumb");
 
         this.controlsBottom = this.root.querySelector(".sf-controls-bottom");
+        this.controlsButtons = this.root.querySelectorAll(".c");
 
         this.controlsLeft = this.root.querySelector(".sf-controls-left");
         this.controlsRight = this.root.querySelector(".sf-controls-right");
 
         this.playBtn = this.root.querySelector(".sf-play-btn");
         this.time = this.root.querySelector(".sf-time");
-
+        this.speedMenu = this.root.querySelector(".speed")
         this.volumeBtn = this.root.querySelector(".sf-volume-btn");
         this.settingsBtn = this.root.querySelector(".sf-settings-btn");
+        this.settingsmenu = this.root.querySelector(".settings");
+        this.subControlMenus = this.root.querySelectorAll(".sub-controlsM");
+        this.qualitybtn = this.root.querySelector(".sf-quality-btn");
+        this.qualitiescont = this.root.querySelector(".qualities");
+        this.quality = this.root.querySelector(".quality");
         this.fullscreenBtn = this.root.querySelector(".sf-fullscreen-btn");
 
         this.volume = this.root.querySelector(".sf-volume");
 
         this.volumeSlider = this.root.querySelector(".sf-volume-slider");
         this.volumeLevel = this.root.querySelector(".sf-volume-level");
+
+        this.speeds = this.root.querySelectorAll(".speedx")
+        this.pip = this.root.querySelector('.sf-pip-btn');
     }
 
     #initializeAttributes() {
@@ -636,7 +932,7 @@ class SFPlayer extends HTMLElement {
         this.errorBanner.textContent = "";
         this.errorBanner.classList.add("hidden");
     }
-
+    
     // ==========================================================
     // Event Binding
     // ==========================================================
@@ -671,6 +967,26 @@ class SFPlayer extends HTMLElement {
             this.#togglePlay();
 
         });
+        this.controlsButtons.forEach(controlBtn => {
+    controlBtn.addEventListener("click", () => {
+        console.log("clicked");
+        
+            const menu = this.root.querySelector(
+            `.${controlBtn.dataset.rmenu}`
+        );
+
+        const isOpen = menu.classList.contains("show");
+
+        this.subControlMenus.forEach(m => {
+            m.classList.remove("show");
+        });
+
+        if (!isOpen) {
+            menu.classList.add("show");
+        }
+    });
+       })
+       
 
         this.video.addEventListener("play", () => {
             this.playBtn.textContent = "⏸";
@@ -684,10 +1000,23 @@ class SFPlayer extends HTMLElement {
 
         this.video.addEventListener("timeupdate", () => {
             this.#updateProgress();
+            
         });
+        this.video.addEventListener("timeupdate", ()=>{
+            this.#updateBuffer();
+        })
 
         this.video.addEventListener("loadedmetadata", () => {
             this.#updateProgress();
+        });
+        this.video.addEventListener("loadedmetadata", () => {
+            const ratio = `${video.videoWidth} / ${video.videoHeight}`;
+
+                player.style.setProperty(
+                "aspect-ratio",
+                ratio,
+                "important"
+            );
         });
 
         this.video.addEventListener("error", () => {
@@ -702,9 +1031,18 @@ class SFPlayer extends HTMLElement {
         this.volumeSlider.addEventListener("click", (e) => {
             this.#setVolume(e);
         });
-
+       
+        this.speeds.forEach(speed => {
+    speed.addEventListener("click", () => {
+        this.playbackSpeed = Number(speed.dataset.speed);
+        this.video.playbackRate = this.playbackSpeed;
+    });
+});
         this.progress.addEventListener("click", (event) => {
             this.#seek(event);
+            this.#updateBuffer()
+            console.log(this.playbackSpeed);
+            console.log(this.video.playbackRate);
         });
 
         this.fullscreenBtn.addEventListener("click", () => {
@@ -714,6 +1052,18 @@ class SFPlayer extends HTMLElement {
         this.player.addEventListener("mousemove", () => {
             this.#resetControlsTimer();
         });
+
+        this.quality.addEventListener("click",()=>{
+            alert("uwu");
+           
+        })
+        this.pip.addEventListener("click", () => this.#picinpic());
+        this.settingsBtn.addEventListener("click", () => {
+             this.subControlMenus.forEach(menu => {
+        menu.classList.remove("show");
+    });
+            this.settingsmenu.classList.toggle("show")
+});
 
         // Store the bound reference so it can be removed in
         // disconnectedCallback() — previously this leaked one
@@ -741,6 +1091,8 @@ class SFPlayer extends HTMLElement {
         let playPromise;
 
         try {
+            this.video.playbackRate = this.playbackSpeed;
+    
             playPromise = this.video.play();
         } catch (err) {
             // play() can throw synchronously (e.g. no supported source).
@@ -762,6 +1114,7 @@ class SFPlayer extends HTMLElement {
         }
     }
 
+
     // ==========================================================
     // Progress / Time
     // ==========================================================
@@ -775,10 +1128,46 @@ class SFPlayer extends HTMLElement {
             : 0;
 
         this.progressPlayed.style.width = `${percent}%`;
+        this.progressThumb.style.left = `${percent}%`;
 
         this.time.textContent =
             `${this.#formatTime(current)} / ${this.#formatTime(duration)}`;
     }
+#updateBuffer() {
+    const duration = this.video.duration;
+    console.log("Current segment:", this.segmentLoader.currentSegment);
+
+    if (!Number.isFinite(duration) || duration <= 0) {
+        this.progressBuffer.style.width = "0%";
+        return;
+    }
+
+    let bufferEnd = 0;
+
+    for (let i = 0; i < this.video.buffered.length; i++) {
+        const start = this.video.buffered.start(i);
+        const end = this.video.buffered.end(i);
+
+        if (
+            this.video.currentTime >= start &&
+            this.video.currentTime <= end
+        ) {
+            bufferEnd = end;
+            break;
+        }
+    }
+
+    const percent = (bufferEnd / duration) * 100;
+
+    this.progressBuffer.style.width = `${percent}%`;
+
+    console.log({
+        currentTime: this.video.currentTime,
+        bufferEnd,
+        percent,
+        ranges: this.video.buffered.length
+    });
+}
 
     #findSegmentIndexForTime(time) {
         if (!this.variantPlaylist || !this.variantPlaylist.segments?.length) {
@@ -826,6 +1215,7 @@ class SFPlayer extends HTMLElement {
 
         // Case 1: already buffered — instant seek, no network
         if (this.#isBuffered(targetTime)) {
+            this.internalSeek = true;
             this.video.currentTime = targetTime;
             return;
         }
@@ -852,7 +1242,7 @@ class SFPlayer extends HTMLElement {
                     total += this.variantPlaylist.segments[i]?.duration || 0;
                 }
                 this.loadedDuration = total;
-
+                this.internalSeek = true;
                 this.video.currentTime = targetTime;
             } else {
                 console.error("❌ Seek failed — could not load target segment");
@@ -971,6 +1361,29 @@ class SFPlayer extends HTMLElement {
             console.warn("⚠️ Fullscreen toggle failed:", err.message);
         }
     }
+     // ==========================================================
+    // Pic-in pic
+    // ==========================================================
+    async #picinpic(){
+        if(!document.pictureInPictureEnabled){
+            console.warn("Picture-in-Picture is not supported.");
+            return;
+        }
+        if (!document.pictureInPictureEnabled) {
+                this.pipButton.disabled = true;
+            }
+
+        try{
+            if(document.pictureInPictureElement){
+                await document.exitPictureInPicture();
+            }else{
+                await this.video.requestPictureInPicture();
+            }
+        }catch{
+            console.error("Failed to toggle Picture-in-Picture:", err);
+        }
+    }
+
 
     // ==========================================================
     // Controls Visibility
@@ -984,6 +1397,23 @@ class SFPlayer extends HTMLElement {
         if (!this.video.paused) {
             this.controls.classList.add("hidden");
         }
+    }
+
+    insertQualities() {
+        console.log(this.qualitiescont);
+        console.log(this.qualities);
+        this.qualitiescont.innerHTML = this.qualities
+            .map(chunk => `<div class="quality" data-index="${chunk.index}">${chunk.quality}p</div>`)
+            .join("");
+
+        const qualities = this.root.querySelectorAll(".quality");
+    qualities.forEach(q => {
+    q.addEventListener("click", () => {
+        this.playQuality(Number(q.dataset.index), true);
+        
+        console.log("uwu");
+            });
+})
     }
 
     #resetControlsTimer() {
