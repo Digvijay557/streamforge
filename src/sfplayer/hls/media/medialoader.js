@@ -4,7 +4,7 @@ export class SegmentLoader {
     this.mediaEngine = mediaEngine;
 
     this.playlist = null;
-
+    this.MAX_RETRIES = 5;
     this.loading = false;
   }
 
@@ -17,6 +17,7 @@ export class SegmentLoader {
 }
 
   async loadNext() {
+    let lasterror;
     console.log("currentSegment:", this.currentSegment);
 console.log("segments length:", this.playlist.segments.length);
 console.log("segment:", this.playlist.segments[this.currentSegment]);
@@ -24,6 +25,9 @@ console.log("segment:", this.playlist.segments[this.currentSegment]);
     if (this.loading) return false;
     if (this.currentSegment >= this.playlist.segments.length) return false;
 
+    for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
+      console.log(`try ${attempt}st`);
+      
     this.loading = true;
     const segment = this.playlist.segments[this.currentSegment];
 
@@ -36,12 +40,16 @@ console.log("segment:", this.playlist.segments[this.currentSegment]);
       this.currentSegment++;
       return true;
     } catch (err) {
-      console.error(`❌ Failed to load segment ${this.currentSegment}`, err);
+      this.currentSegment--;
+      lastError = err;
+       console.warn(`Retry ${attempt}`);
       return false;
     } finally {
       this.loading = false;
     }
-  }
+  }throw lasterror
+}
+
 
   // NEW — jump the pointer for a seek. Does not load anything itself.
   seekTo(index) {

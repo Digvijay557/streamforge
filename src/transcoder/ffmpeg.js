@@ -5,7 +5,7 @@ const { execFile } = require('child_process');
 const path = require('path');
 const { createMasterPlaylist } = require('./hls');
 const { rewritePlaylist } = require('./rewrite');
-
+const { emitProgress } = require("../services/progress.manager");
 const FFMPEG_TIMEOUT_MS = 30 * 60 * 1000; // 30 min hard ceiling per rendition
 const FFMPEG_MAX_BUFFER = 1024 * 1024 * 20; // 20MB for stdout/stderr capture
 const ALLOWED_EXTENSIONS = new Set(['.mp4', '.mov', '.mkv', '.avi', '.webm', '.m4v']);
@@ -117,7 +117,12 @@ async function generateHLSforQuality(videoPath, quality, outputDir) {
     });
 }
 
-module.exports.generateHLS = async function generateHLS(filepath) {
+module.exports.generateHLS = async function generateHLS(filepath, videoPath) {
+    emitProgress(videoPath,{
+            stage:"Starting....",
+            percent: (0)*100
+        })
+    let completedsteps = 0;
     await assertReadableVideoFile(filepath);
 
     let vidinfo;
@@ -126,40 +131,66 @@ module.exports.generateHLS = async function generateHLS(filepath) {
     } catch (err) {
         throw new Error(`Failed to read video metadata for ${filepath}: ${err.message}`);
     }
-
+    
     if (!vidinfo || !vidinfo.video || !Number.isFinite(vidinfo.video.height)) {
         throw new Error(`No usable video stream found in ${filepath}`);
     }
-
+    
     const qualities = planQualities(vidinfo.video.height);
     const videoName = path.parse(filepath).name;
     const videoRoot = path.join('.streamforge', videoName);
-
+    
+    const totalsteps = qualities.length+2;
+    completedsteps++;
+    emitProgress(videoPath,{
+        stage:"Video Information Obtained!!",
+        percent: (completedsteps/totalsteps)*100
+    })
     await ensureDir('.streamforge');
-
+    
     // Start clean so old segments from a previous run don't mix with new ones.
     await removeDirSafely(videoRoot);
     await ensureDir(videoRoot);
-
+    
     try {
         for (const quality of qualities) {
             const outputDir = path.join(videoRoot, `${quality}`);
 
+            emitProgress(videoPath,{
+                stage: "encoding",
+                quality,
+                percent: (completedsteps / totalsteps) * 100
+                    });
             await generateHLSforQuality(filepath, quality, outputDir);
+            completedsteps++;
 
+            emitProgress(videoPath,{
+                stage:`encoding completed`,
+                quality:quality,
+                percent: (completedsteps/totalsteps)*100
+            })
+            
             await rewritePlaylist(
                 path.join(outputDir, 'index.m3u8'),
                 videoName,
                 `${quality}`
             );
         }
-
         await createMasterPlaylist(videoName, qualities);
+        completedsteps++;
+        emitProgress(videoPath,{
+            stage:"Generated Master playlist",
+            percent: (completedsteps/totalsteps)*100
+        })
 
         await rewritePlaylist(
             path.join('.streamforge', videoName, 'master.m3u8'),
             videoName
         );
+        emitProgress(videoPath,{
+            stage:"Finished",
+            percent: 100
+        })
     } catch (err) {
         // Fail fast, but don't leave a half-built output tree behind.
         await removeDirSafely(videoRoot);

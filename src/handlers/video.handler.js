@@ -11,8 +11,9 @@ async function videoHandler(req, res, config = {}) {
             const sourcePath = path.join(config.source, result.vidsrc);
 
             console.log("[StreamForge] Generating HLS:", sourcePath);
+            const videoPath = `/${result.vidsrc}`;
 
-            await generateHLS(sourcePath);
+            await generateHLS(sourcePath, videoPath);
 
             return res.sendFile(path.resolve(result.requestedFile), {
                 dotfiles: "allow"

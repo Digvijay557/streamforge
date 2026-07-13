@@ -1,6 +1,6 @@
 import { parsePlaylist } from "../parser/Parser.js";
 import Network from "../network/Network.js";
-import { Streamforge } from "./streamforge.js";
+import { Streamforge } from "../core/streamforge.js";
 import { MediaEngine } from "../media/mediaengine.js"
 import { SegmentLoader } from "../media/medialoader.js"
 
@@ -127,7 +127,15 @@ class SFPlayer extends HTMLElement {
 
         console.log("① Requesting master playlist");
 
+        this.progressSource = this.network.progress(video, (progress) => {
+    this.progress = progress;
+    this.#updateGeneration();
+});
         const masterResponse = await this.#request(video, "master playlist");
+
+
+
+
         const masterText = await masterResponse.text();
         this.masterPlaylist = this.#parsePlaylistSafe(masterText, "master playlist");
         this.qualities = this.masterPlaylist.qualities.map((q, i) => ({
@@ -140,6 +148,7 @@ class SFPlayer extends HTMLElement {
         // ==========================================================
         // Request Variant Playlist
         // ==========================================================
+   
         
         this.playQuality(0,false)
 
@@ -332,11 +341,11 @@ for (let i = 0; i < this.video.buffered.length; i++) {
 }
 
         this.bufferedAhead = bufferEnd - this.video.currentTime;
-            console.log({
-                currentTime: this.video.currentTime,
-                bufferedAhead: this.bufferedAhead,
-                bufferTotal: this.video.buffered.length > 0 ? this.video.buffered.end(0) : 0
-            });
+            // console.log({
+            //     currentTime: this.video.currentTime,
+            //     bufferedAhead: this.bufferedAhead,
+            //     bufferTotal: this.video.buffered.length > 0 ? this.video.buffered.end(0) : 0
+            // });
             if (this.segmentLoader.loading) return;
 
            
@@ -503,6 +512,29 @@ for (let i = 0; i < this.video.buffered.length; i++) {
         border-radius:5px;
       }
 
+.sf-progress-generation {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 0%;
+
+    background: #7C3AED;
+    border-radius: 5px;
+
+    z-index: 1;
+
+    opacity: 1;
+
+    transition:
+        width 250ms linear,
+        opacity 250ms ease;
+}
+
+.sf-progress-generation.hidden {
+    opacity: 0;
+}
+
       .sf-progress-played {
         position: absolute;
         top: 0; left: 0; height: 100%;
@@ -634,6 +666,7 @@ for (let i = 0; i < this.video.buffered.length; i++) {
         transform-origin: bottom right;
         transition: opacity .2s ease, transform .2s cubic-bezier(.34,1.56,.64,1), visibility .2s ease;
       }
+        
         .speedMenu{
         background: rgba(24, 24, 24, 0);
         backdrop-filter: blur(16px) saturate(160%);
@@ -773,6 +806,7 @@ transition:
     <div class="sf-controls">
 
         <div class="sf-progress">
+            <div class="sf-progress-generation"></div>
             <div class="sf-progress-buffer"></div>
             <div class="sf-progress-played"></div>
             <div class="sf-progress-thumb"></div>
@@ -859,6 +893,7 @@ transition:
         this.progress = this.root.querySelector(".sf-progress");
         this.progressPlayed = this.root.querySelector(".sf-progress-played");
         this.progressBuffer = this.root.querySelector(".sf-progress-buffer");
+        this.progressGeneration = this.root.querySelector(".sf-progress-generation");
         this.progressThumb = this.root.querySelector(".sf-progress-thumb");
 
         this.controlsBottom = this.root.querySelector(".sf-controls-bottom");
@@ -1167,6 +1202,26 @@ transition:
         percent,
         ranges: this.video.buffered.length
     });
+}
+#updateGeneration() {
+    if (!this.progress) return;
+
+    const percent = this.progress.percent;
+
+    this.progressGeneration.classList.remove("hidden");
+    this.progressGeneration.style.width = `${percent}%`;
+
+    if (percent >= 100) {
+        setTimeout(() => {
+            this.progressGeneration.classList.add("hidden");
+            this.progressGeneration.style.width = "0%";
+
+            if (this.progressSource) {
+                this.progressSource.close();
+                this.progressSource = null;
+            }
+        }, 500);
+    }
 }
 
     #findSegmentIndexForTime(time) {
