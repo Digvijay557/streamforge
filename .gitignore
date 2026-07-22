@@ -1,0 +1,6 @@
+node_modules/
+.streamforge/
+videos/
+dist/
+*.ts
+*.m3u8
