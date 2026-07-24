@@ -31,23 +31,25 @@ async function videoHandler(req, res, config = {}) {
     console.log(result.status);
     
 }
-        let streamInfo = {
-            protocol:"hls"
-        };
+        
         if (!result.status) {
 
             //console.log("[StreamForge] Generating HLS:", sourcePath);
 
-             streamInfo = await generateHLS(sourcePath, videoPath);
+             await generateHLS(sourcePath, videoPath);
 
             
         }
-        console.log("proto "+ streamInfo.protocol);
         
-
+        
+        const protocol = fs.existsSync(path.join(cachePath, "manifest.sf"))
+    ? "sf"
+    : "hls";
+    console.log(protocol);
+    
         const requestedFile = path.join(
         cachePath,
-        streamInfo.protocol === "sf"
+        protocol === "sf"
         ? "manifest.sf"
         : "master.m3u8"
 );
@@ -57,12 +59,12 @@ console.log("path " + path.resolve(requestedFile));
 const fileContent = await fsp.readFile(requestedFile)
 
 
-        if(streamInfo.protocol == "sf"){
+        if(protocol == "sf"){
             res.setHeader(
                 "Content-Type",
                 "application/vnd.streamforge.manifest+json"
             )
-        }else if (streamInfo.protocol == "hls"){
+        }else if (protocol == "hls"){
             res.setHeader(
                 "Content-Type",
                 "application/vnd.apple.mpegurl"
