@@ -1,9 +1,9 @@
-import { parsePlaylist } from "../parser/Parser.js";
-import Network from "../network/Network.js";
-import { Streamforge } from "../core/streamforge.js";
-import { MediaEngine } from "../media/mediaengine.js"
-import { SegmentLoader } from "../media/medialoader.js"
-
+import { parsePlaylist } from "../../parser/Parser.js";
+import Network from "../../network/Network.js";
+import { Streamforge } from "../streamforge.js";
+import { MediaEngine } from "../../media/mediaengine.js"
+import { SegmentLoader } from "../../media/medialoader.js"
+import {checkBrowserSupport} from '../../network/checkBrowserSupport.js'
 // ==========================================================
 // Structured error type — mirrors the error-class pattern
 // used in generateHLS.js so failures are inspectable by
@@ -132,6 +132,50 @@ class SFPlayer extends HTMLElement {
             );
         }
     }
+  #detectNativeHLS(url, timeout = 5000) {
+    return new Promise((resolve) => {
+        const video = document.createElement("video");
+
+        let finished = false;
+
+        const cleanup = (supported) => {
+            if (finished) return;
+            finished = true;
+
+            clearTimeout(timer);
+
+            video.pause();
+            video.removeAttribute("src");
+            video.load();
+
+            video.onloadedmetadata = null;
+            video.onerror = null;
+            video.oncanplay = null;
+            resolve(supported);
+        };
+
+        const timer = setTimeout(() => {
+            cleanup(false);
+        }, timeout);
+
+        video.oncanplay = () => {
+            cleanup(true);
+        };
+
+        video.onerror = () => {
+            cleanup(false);
+        };
+        console.log(url);
+        
+        video.src = url;
+    });
+}
+ #playNative(url){
+    console.log("PLAYING MOTHER FUCKING NATIVE");
+    
+    this.video.src = url;
+    this.#safePlay()
+ }
 
     async load() {
         this.network.abortAll()
@@ -160,36 +204,61 @@ class SFPlayer extends HTMLElement {
     //console.log("PROCESS GENERATION CLOSED");
     
 }
-        this.progressSource = this.network.progress(video, (progress) => {
+
+const nativeHLS = await this.#detectNativeHLS(
+    `${Streamforge.endpoint}/streamforge/test/master.m3u8`)
+console.log("oh yeah " + nativeHLS);
+let change;
+    if(nativeHLS){
+        console.log("hmm");
+        
+       change = `${video}-native` 
+    }else{
+        change = video;
+    }
+    console.log("hi:" + change);
+    this.progressSource = this.network.progress(video, (progress) => {
             this.generationprogress = progress;
             this.#updateGeneration();
 });
-        const Responce = await this.#request(video, "master playlist", this.MASTER_PLAYLIST_TIMEOUT);
+    
+        const Responce = await this.#request(change, "master playlist", this.MASTER_PLAYLIST_TIMEOUT);
         const contentType = Responce.headers.get("Content-Type")
         console.log(contentType);
         
+        console.log("LOAD START");
+console.log("Content-Type:", contentType);
+console.trace();
         switch (contentType) {
     case "application/vnd.streamforge.manifest+json": {
+        console.log("Entered SF case");
         // Bug fix: was previously undefined-referencing `response`/`this.parsed`
         // and passing a quality *object* into playSF instead of its `.id` —
         // both are the reason SF playback never actually started.
         this.protocol = "sf";
         const manifest = await Responce.json();
         this.qualities = manifest.qualities.map((q, i) => ({
-        index: i,
-        quality: q.id,
-        
-    }));
+            index: i,
+            quality: q.id,
+            
+        }));
         console.log(manifest.qualities.at(-1).id);
         
         this.insertQualities()
         return this.playSF(manifest, manifest.qualities.at(-1).id, false);
     }
-
+    
     case "application/vnd.apple.mpegurl": {
+        console.log("Entered HLS case");
         // Bug fix: was `response`/`this.parsed` (both undefined — ReferenceError)
         // and never saved `this.masterPlaylist`, which playHLS() requires.
         this.protocol = "hls";
+        const nativeHLS = await this.#detectNativeHLS(
+    `${Streamforge.endpoint}/streamforge/stream/${video}/master.m3u8`
+    
+);
+console.log(nativeHLS);
+   
         const playlist = await Responce.text();
         const parsed = this.#parsePlaylistSafe(playlist, "master playlist");
         this.masterPlaylist = parsed;
@@ -198,18 +267,23 @@ class SFPlayer extends HTMLElement {
         quality: q
         }));
         this.insertQualities()
+         if(nativeHLS){
+        console.log(nativeHLS);
+        return this.#playNative(`${Streamforge.endpoint}/streamforge/stream/${video}/master.m3u8`)
+    }else{
         return this.playHLS(0, false);
+        }
     }
-
     default:
-        throw new Error("Unsupported protocol");
-}
-    
+        console.error("Unsupported:", contentType);
+    throw new Error("Unsupported protocol");
     }
+    
+}
 
-    // ==========================================================
-    // StreamForge playback — mirrors playHLS()'s shape so both
-    // protocols can share #onTimeUpdate / #findSegmentIndexForTime
+// ==========================================================
+// StreamForge playback — mirrors playHLS()'s shape so both
+// protocols can share #onTimeUpdate / #findSegmentIndexForTime
     // / #performSeek via this.currentTimeline.
     // ==========================================================
     async playSF(manifest, quality, isLoaded) {
@@ -224,13 +298,13 @@ class SFPlayer extends HTMLElement {
         this.manifest = manifest;
         this.protocol = "sf";
         this.quality = quality;
-
+        
         // ==========================================================
         // ② Unified timeline (see constructor) — replaces the
         //    HLS-only this.variantPlaylist.segments dependency
         // ==========================================================
         this.currentTimeline = manifest.segments.map(duration => ({ duration }));
-
+        
         const totalDuration = this.currentTimeline.reduce(
             (sum, seg) => sum + seg.duration, 0
         );
@@ -251,7 +325,7 @@ class SFPlayer extends HTMLElement {
                 );
             }
         }
-
+        
         if (typeof this.media.setDuration === "function") {
             await this.media.setDuration(totalDuration);
         }
@@ -278,7 +352,7 @@ class SFPlayer extends HTMLElement {
         }
 
         this.currentController = null;
-
+        
         // ==========================================================
         // ⑤ Set up / reuse Segment Loader — never recreate it on a
         //    quality switch, just hand it the new quality
@@ -350,16 +424,35 @@ class SFPlayer extends HTMLElement {
 
             this.#safePlay();
         }
-
+        
         this.dispatchEvent(new CustomEvent("sf-ready", {
             detail: { duration: totalDuration }
         }));
         this.isSwitchingQuality = false;
     }
 
-    async playHLS(varientIndex, loaded){
+    // #streamNative(){
+    //     this.#safePlay()
+    // }
+    
+    async playHLS(varientIndex, loaded){ 
+        const v = document.createElement("video");
+        
+        console.log(v.canPlayType("application/vnd.apple.mpegurl"));
+console.log(v.canPlayType("application/x-mpegURL"));
+const nativeHLS = checkBrowserSupport();
+console.log(nativeHLS);
 
-        this.isSwitchingQuality = true;
+if(this.isNative){
+    this.#playNative();
+}
+
+// if(nativeHLS.supported == true){
+        //     this.#streamNative();
+        // } else{
+
+            
+            this.isSwitchingQuality = true;
         this.network.abortAll()
         
          const variant = this.masterPlaylist.variants?.[varientIndex];
@@ -386,7 +479,7 @@ class SFPlayer extends HTMLElement {
         
         this.variantPlaylist = variantPlaylist;
         this.protocol = "hls";
-
+        
         // Unified timeline (see constructor) — replaces per-protocol
         // reads of this.variantPlaylist.segments everywhere else.
         this.currentTimeline = variantPlaylist.segments;
@@ -421,7 +514,7 @@ class SFPlayer extends HTMLElement {
          totalDuration = variantPlaylist.segments.reduce(
             (sum, seg) => sum + seg.duration, 0
         );
-
+        
         if (typeof this.media.setDuration === "function") {
             await this.media.setDuration(totalDuration);
         } else {
@@ -433,9 +526,9 @@ class SFPlayer extends HTMLElement {
         // ==========================================================
         // Request & Append Init Segment
         // ==========================================================
-
+        
         //console.log("③ Requesting init segment");
-
+        
         if (!variantPlaylist.initSegment) {
             throw new SFPlayerError(
                 "Variant playlist has no init segment",
@@ -544,6 +637,7 @@ class SFPlayer extends HTMLElement {
     // active. Both playHLS()/playSF() already know not to reload the
     // first segment or restart the media engine when `loaded` is true.
     // ==========================================================
+// }
     async playQuality(index) {
 
         if (this.protocol === "hls") {

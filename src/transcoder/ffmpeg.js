@@ -177,7 +177,7 @@ async function generateHLSforQuality(videoPath, quality, outputDir, onProgress) 
 
     });
 }
-module.exports.generateHLS = async function generateHLS(filepath, videoPath, retry =0) {
+module.exports.generateHLS = async function generateHLS(filepath, videoPath,retry =0) {
     emitProgress(videoPath,{
             stage:"Starting....",
             percent: (0)*100
@@ -257,13 +257,15 @@ module.exports.generateHLS = async function generateHLS(filepath, videoPath, ret
     );
 }
         await createMasterPlaylist(videoName, qualities);
-         protocol = await generateManifest(
-    videoName,
-    qualities,
-    duration
-)
-    ? "sf"
-    : "hls";
+        
+            protocol = await generateManifest(
+                videoName,
+                qualities,
+                duration
+            )
+            ? "sf"
+            : "hls";
+        
         
         
         

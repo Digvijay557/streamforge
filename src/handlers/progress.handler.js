@@ -4,7 +4,8 @@ const {
 } = require("../services/progress.manager");
 
 function progressHandler(req, res) {
-    const videoPath = req.path.slice(0, -"/progress".length);
+
+    const videoPath = req.path.slice(0, -"/progress".length) + ".mp4";
     // SSE headers
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -22,7 +23,8 @@ function progressHandler(req, res) {
     const listener = (progress) => {
         res.write(`data: ${JSON.stringify(progress)}\n\n`);
     };
-
+    console.log("progressss" + videoPath);
+    
     onProgress(videoPath,listener);
 
     req.on("close", () => {

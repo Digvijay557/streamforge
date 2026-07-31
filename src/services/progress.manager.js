@@ -2,7 +2,8 @@ const listeners = new Map();
 
 function emitProgress(videoPath, progress) {
     const videoListeners = listeners.get(videoPath);
-
+    console.log("emitprog"  + videoPath);
+    
     if (!videoListeners) return;
 
     for (const listener of videoListeners) {
@@ -11,7 +12,10 @@ function emitProgress(videoPath, progress) {
 }
 
 function onProgress(videoPath, listener) {
+    console.log("opprgress");
     if (!listeners.has(videoPath)) {
+        console.log("opprgress");
+        
         listeners.set(videoPath, new Set());
     }
 

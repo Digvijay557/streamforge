@@ -10,8 +10,8 @@ async function getVideoInfo(videoPath) {
         exec(command, (error, stdout, stderr) => {
 
             if (error) {
-                    //console.error("[StreamForge] ffprobe failed:");
-                    //console.error(stderr);
+                    console.error("[StreamForge] ffprobe failed:");
+                    console.error(stderr);
 
                     return reject(error);
                 }
@@ -35,7 +35,7 @@ async function getVideoInfo(videoPath) {
                     format: info.format || null
                 });
             } catch (err) {
-    //console.error("[StreamForge] Invalid ffprobe JSON output");
+    console.error("[StreamForge] Invalid ffprobe JSON output");
     reject(err);
 }
 

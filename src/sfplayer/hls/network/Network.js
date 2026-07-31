@@ -15,6 +15,8 @@ export default class Network {
         let timeoutId;
         try {
             let url;
+            console.log("oh yeha " + path);
+            
 
             if (path.startsWith("/")) {
                 // Already a StreamForge internal path
@@ -57,6 +59,8 @@ export default class Network {
         if (!path) {
             throw new Error("No path provided for progress stream.");
         }
+        console.log("progress" + path);
+        
 
         try {
             const url = `${Streamforge.endpoint}/streamforge/${path}/progress`;
@@ -66,27 +70,27 @@ export default class Network {
             const source = new EventSource(url);
 
             source.onopen = () => {
-                //console.log("✅ SSE Connected");
+                console.log("✅ SSE Connected");
             };
 
             source.onmessage = (event) => {
-                //console.log("📨 SSE Message:", event.data);
+                console.log("📨 SSE Message:", event.data);
 
                 try {
                     const progress = JSON.parse(event.data);
                     callback(progress);
                 } catch (err) {
-                    //console.error("❌ Failed to parse SSE message:", err);
+                    console.error("❌ Failed to parse SSE message:", err);
                 }
             };
 
             source.onerror = (event) => {
-                //console.error("❌ SSE Error", event);
+                console.error("❌ SSE Error", event);
             };
 
             return source;
         } catch (err) {
-            //console.error("❌ Progress stream failed:", err);
+            console.error("❌ Progress stream failed:", err);
             throw err;
         }
     }

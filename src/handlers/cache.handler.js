@@ -16,7 +16,10 @@ async function cacheHandler(req, res, config = {}) {
     }
 
     const cacheFile = path.join(config.cache, relativePath);
-
+    console.log("usw", cacheFile);
+    
+    console.log(!fs.existsSync(cacheFile));
+    
     if (!fs.existsSync(cacheFile)) {
         return false;
     }

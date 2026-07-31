@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "type": "vod",
+  "init": "init.mp4",
+  "video": {
+    "name": "test",
+    "duration": 5.01551
+  },
+  "qualities": [
+    {
+      "id": 360,
+      "width": 640,
+      "height": 360,
+      "bandwidth": 800000
+    },
+    {
+      "id": 240,
+      "width": 426,
+      "height": 240,
+      "bandwidth": 400000
+    },
+    {
+      "id": 144,
+      "width": 256,
+      "height": 144,
+      "bandwidth": 200000
+    }
+  ],
+  "segments": [
+    5.005
+  ]
+}

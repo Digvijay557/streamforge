@@ -8,9 +8,24 @@ const { validate } = require("../utils/helpers");
 async function videoHandler(req, res, config = {}) {
     try {
         const result = await exists(req.url);
-        const sourcePath = path.join(config.source, result.vidsrc);
-        const videoName = path.parse(sourcePath).name;
-        const videoPath = `/${result.vidsrc}`;
+        console.log("result.vidsrc: " + result.vidsrc);
+        console.log(result.vidsrc.split("-")[1]);
+        const isNative = (result.vidsrc.split("-")[1] == "native.mp4")?true:false;
+        let videoname;
+        if(isNative){
+            videoname = `${result.vidsrc.split("-")[0]}.mp4`
+        }else{
+            videoname = `${result.vidsrc.split("-")[0]}`
+        }
+        console.log(isNative);
+        
+        
+        
+        const sourcePath = path.join(config.source, videoname);
+
+        const videoName = path.parse(sourcePath).name; 
+        
+        const videoPath = `/${ videoname}`;
         const cachePath = path.join(config.cache, videoName);
         console.log(cachePath);
         console.log(`status: ${result.status}`);
@@ -34,19 +49,21 @@ async function videoHandler(req, res, config = {}) {
         
         if (!result.status) {
 
-            //console.log("[StreamForge] Generating HLS:", sourcePath);
+            console.log("[StreamForge] Generating HLS:", sourcePath,videoPath);
 
              await generateHLS(sourcePath, videoPath);
 
             
         }
+        let protocol;
+        if(isNative){
+           protocol = "hls" 
+        }else{
+            protocol = fs.existsSync(path.join(cachePath, "manifest.sf"))
+            ? "sf"
+            : "hls";
+        }
         
-        
-        const protocol = fs.existsSync(path.join(cachePath, "manifest.sf"))
-    ? "sf"
-    : "hls";
-    console.log(protocol);
-    
         const requestedFile = path.join(
         cachePath,
         protocol === "sf"
@@ -57,7 +74,6 @@ async function videoHandler(req, res, config = {}) {
 console.log("path " + path.resolve(requestedFile));
 
 const fileContent = await fsp.readFile(requestedFile)
-
 
         if(protocol == "sf"){
             res.setHeader(
