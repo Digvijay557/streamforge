@@ -638,6 +638,21 @@ if(this.isNative){
     // first segment or restart the media engine when `loaded` is true.
     // ==========================================================
 // }
+getQuality(qualtiy){
+    return this.qualities.find(q => q.index === qualtiy);
+}
+
+setQuality(quality) {
+    const index = this.qualities.findIndex(q => q.index === quality);
+    if (index !== -1) {
+        this.currentQualityIndex = index;
+    }
+    playQuality(index);
+}
+getAvailableQualities(){
+    return this.qualities.map(q => q.index);
+}
+
     async playQuality(index) {
 
         if (this.protocol === "hls") {
