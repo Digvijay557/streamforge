@@ -43,6 +43,7 @@ class SFPlayer extends HTMLElement {
         // the progress SSE) — give it much more room than the Network
         // default (5s) used for ordinary playlist/segment fetches.
         this.MASTER_PLAYLIST_TIMEOUT = 5 * 60 * 1000;
+        this.events = new EventTarget();
 
         // ==========================================================
         // ① Unified playback state — shared between HLS and
@@ -211,10 +212,11 @@ console.log("oh yeah " + nativeHLS);
 let change;
     if(nativeHLS){
         console.log("hmm");
-        
-       change = `${video}-native` 
+        this.emit("backendchange", {backend: "Native"})
+        change = `${video}-native` 
     }else{
         change = video;
+        this.emit("backendchange", {backend: "Streamforge"})
     }
     console.log("hi:" + change);
     this.progressSource = this.network.progress(video, (progress) => {
@@ -242,6 +244,7 @@ console.trace();
             quality: q.id,
             
         }));
+        
         console.log(manifest.qualities.at(-1).id);
         
         this.insertQualities()
@@ -423,11 +426,16 @@ console.log(nativeHLS);
             }
 
             this.#safePlay();
+            this.emit("qualitychange", this.qualities.find(q => q.quality === quality));
         }
         
-        this.dispatchEvent(new CustomEvent("sf-ready", {
-            detail: { duration: totalDuration }
-        }));
+    if (!isLoaded) {
+    this.emit("ready", {
+        duration: totalDuration,
+        qualities: this.qualities,
+        protocol: this.protocol
+    });
+}
         this.isSwitchingQuality = false;
     }
 
@@ -620,16 +628,20 @@ if(this.isNative){
         //console.log("⑥ Starting playback");
         
         this.#safePlay();
+        this.emit("qualitychange", this.qualities[varientIndex]);
     }
         
     // ==========================================================
     // Wire Up timeupdate → loadNext()
     // ==========================================================
-
-        this.dispatchEvent(new CustomEvent("sf-ready", {
-            detail: { duration: totalDuration }
-        }));
-        this.isSwitchingQuality = false;
+if(!loaded){
+    this.emit("ready", {
+        duration: totalDuration,
+        qualities: this.qualities,
+        protocol: this.protocol
+    });
+}
+    this.isSwitchingQuality = false;
     }
 
     // ==========================================================
@@ -658,6 +670,7 @@ getAvailableQualities(){
         if (this.protocol === "hls") {
 
             await this.playHLS(index, true);
+            
 
         } else {
 
@@ -721,6 +734,10 @@ for (let i = 0; i < this.video.buffered.length; i++) {
                     // let the next timeupdate tick retry.
                     //console.warn(`⚠️ Segment ${nextIndex} failed to load, will retry`);
                 }
+                this.emit("timeupdate",{
+                    currentTime: this.video.currentTime,
+                    buffered: this.video.buffered,
+                })
             } catch (err) {
                 // This previously would have been an unhandled promise
                 // rejection inside an event listener — the video would
@@ -1418,9 +1435,13 @@ transition:
 
         this.#showError(sfError.message);
 
-        this.dispatchEvent(new CustomEvent("sf-error", {
-            detail: { code: sfError.code, message: sfError.message, cause: sfError.cause }
-        }));
+       this.emit("error",{
+
+    sferrcode: sfError.code,
+    message: sfError.message,
+    cause: sfError.cause
+
+});
     }
 
     #showError(message) {
@@ -1523,67 +1544,86 @@ transition:
             this.playBtn.textContent = "⏸";
             this.#resetControlsTimer();
             this.#hideBuffer();
+            this.emit("play");
         });
         this.video.addEventListener("playing", () => {
             this.isBuffering = false;
             this.#hideBuffer();
             this.Gprogess.classList.add("hidden")
+            this.emit("buffered");
         });
         this.video.addEventListener("waiting", () => {
             this.isBuffering = true;
             this.#showBuffer();
+            this.emit("buffering");
         });
-
+        
         this.video.addEventListener("pause", () => {
             this.playBtn.textContent = "▶";
             this.#showControls();
             this.#hideBuffer();
+            this.emit("pause");
         });
-
+        this.video.addEventListener("ended", () => {
+         this.emit("ended");
+        });
         
-
-       this.retryy.addEventListener("click", async () => {
+        
+        
+        this.retryy.addEventListener("click", async () => {
             this.#retry();
-});
+            this.emit("retry");
+        });
         
-
+        
         this.video.addEventListener("loadedmetadata", () => {
             this.#updateProgress();
         });
-
-
+        
+        
         this.video.addEventListener("loadedmetadata", () => {
             const ratio = `${this.video.videoWidth} / ${this.video.videoHeight}`;
-
-                this.player.style.setProperty(
+            
+            this.player.style.setProperty(
                 "aspect-ratio",
                 ratio,
                 "important"
             );
         });
-
+        
         this.video.addEventListener("error", () => {
             const mediaError = this.video.error;
             
         });
-
+        
         this.volumeBtn.addEventListener("click", () => {
             this.#toggleMute();
         });
-
+        
         this.volumeSlider.addEventListener("click", (e) => {
             this.#setVolume(e);
         });
-       
+        
+        this.video.addEventListener("volumechange", () => {
+                this.emit("volumechange", {
+                volume: this.video.volume,
+                muted: this.video.muted
+            });
+        });
+        
         this.speeds.forEach(speed => {
-    speed.addEventListener("click", () => {
-        this.playbackSpeed = Number(speed.dataset.speed);
-        this.video.playbackRate = this.playbackSpeed;
-    });
-});
+            speed.addEventListener("click", () => {
+                this.playbackSpeed = Number(speed.dataset.speed);
+                this.video.playbackRate = this.playbackSpeed;
+                this.emit("speedchange", {
+                    speed: this.playbackSpeed
+                })
+            });
+        });
         this.progress.addEventListener("click", (event) => {
             this.#seek(event);
             this.#updateBuffer()
+            
             //console.log(this.playbackSpeed);
             //console.log(this.video.playbackRate);
         });
@@ -1596,10 +1636,15 @@ transition:
             this.#resetControlsTimer();
         });
 
-        this.quality.addEventListener("click",()=>{
+        this.quality.addEventListener("click",() => {
             alert("uwu");
            
         })
+        this.root.addEventListener("fullscreenchange", () => {
+            this.emit("fullscreenchange", {
+            fullscreen: this.isFullscreen()
+    });
+});
         this.pip.addEventListener("click", () => this.#picinpic());
         this.settingsBtn.addEventListener("click", () => {
              this.subControlMenus.forEach(menu => {
@@ -1831,6 +1876,7 @@ transition:
                 this.loadedDuration = total;
                 this.internalSeek = true;
                 this.video.currentTime = targetTime;
+                this.emit("seeked", { previousTime: this.video.currentTime, time: targetTime });
             } else {
                 //console.error("❌ Seek failed — could not load target segment");
                 this.#handleFatalError(
@@ -2001,8 +2047,8 @@ if (targetIndex !== this.requestedSegmentIndex) {
         const qualities = this.root.querySelectorAll(".quality");
     qualities.forEach(q => {
     q.addEventListener("click", () => {
-        this.playQuality(Number(q.dataset.index));
         
+        this.playQuality(Number(q.dataset.index));
         //console.log("uwu");
             });
 })
@@ -2085,6 +2131,18 @@ if (targetIndex !== this.requestedSegmentIndex) {
 
     }
 
+    
+    
+    emit(event,detail = {}){
+        
+        this.event.dispatchEvent(
+            new CustomEvent(event, {
+                detail: detail
+            })
+            
+        )
+    }
 }
+    
 
 customElements.define("sf-player", SFPlayer);

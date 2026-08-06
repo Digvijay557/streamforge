@@ -73,14 +73,34 @@ StreamForge automates the complete video streaming pipeline—from ingest to pla
 
 ---
 
-## 🚀 v0.3 (Planned)
+## ✅ v0.3
 
-- Browser Capability Detection
-- Native Safari HLS Support
-- Automatic Playback Engine Selection
-- Mobile Optimizations
-- Browser Compatibility Layer
-- Developer Diagnostics
+### 🎬 Streaming
+
+- Rich StreamForge Manifest
+- Better metadata handling
+
+### 🌐 Browser Compatibility
+
+- Browser capability detection
+- Native HLS support
+- Automatic playback backend selection
+- Unified playback architecture
+
+### 🛠 Developer Experience
+
+- Public Player API
+- Event API
+- Real-time encoding progress
+- Better middleware integration
+- Improved developer experience
+
+### ⚙️ Reliability
+
+- Cache validation
+- Automatic regeneration
+- Better retry system
+- Improved error reporting
 
 ---
 
