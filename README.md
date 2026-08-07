@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
 </p>
 
-> 🚧 **StreamForge is under active development.** While v0.2 is complete, APIs may continue to evolve before the first stable release.
+> 🚧 **StreamForge is under active development.** While v0.3 is complete, APIs may continue to evolve before the first stable release.
 
 ---
 
