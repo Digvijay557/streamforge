@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-v0.2-success" alt="Version">
+  <img src="https://img.shields.io/badge/status-v0.3-success" alt="Version">
   <img src="https://img.shields.io/badge/node-Express.js-000000?logo=express" alt="Express">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
 </p>
