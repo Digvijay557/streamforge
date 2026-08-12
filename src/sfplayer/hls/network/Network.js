@@ -64,16 +64,20 @@ export default class Network {
 
         try {
             const url = `${Streamforge.endpoint}/streamforge/${path}/progress`;
+            console.log(url);
+            
 
-            //console.log("📡 Opening SSE:", url);
-
+            console.log("📡 Opening SSE:", url);
+            
+            
             const source = new EventSource(url);
-
+            
             source.onopen = () => {
                 console.log("✅ SSE Connected");
             };
-
+            
             source.onmessage = (event) => {
+            
                 console.log("📨 SSE Message:", event.data);
 
                 try {

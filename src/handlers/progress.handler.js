@@ -5,7 +5,8 @@ const {
 
 function progressHandler(req, res) {
 
-    const videoPath = req.path.slice(0, -"/progress".length) + ".mp4";
+    const videoPath = req.path.slice(0, -"/progress".length);
+    console.log("progress" + videoPath);
     // SSE headers
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
