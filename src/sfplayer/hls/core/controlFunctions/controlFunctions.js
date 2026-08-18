@@ -3,6 +3,8 @@
 // ==========================================================
 
 import { SFPlayerError } from "../Errorhandling/SFPlayerError.js";
+import playRouter from "../playbackEngine/playRouter.js";
+import playQuality from "../playbackEngine/playStreamer.js";
 // import {Gprogess} from "../cacheElements/cacheElements.js"
 export function togglePlay(player) {
     if (player.video.paused) {
@@ -342,14 +344,29 @@ export function hideControls(player) {
 }
 
 export function insertQualities(player) {
+    
     player.qualitiescont.innerHTML = player.qualities
         .map(chunk => `<div class="quality" data-index="${chunk.index}">${chunk.quality}p</div>`)
         .join("");
 
     const qualities = player.root.querySelectorAll(".quality");
+    console.log("awdau: "+ player.protocol);
     qualities.forEach(q => {
         q.addEventListener("click", () => {
-            player.playQuality(Number(q.dataset.index),true).catch(() => {});
+            // console.log("aswdad"+ );
+            
+           playRouter({
+    player,
+    index: Number(q.dataset.index),
+    status: true,
+    protocol: player.protocol,
+    quality: player.qualities[Number(q.dataset.index)].quality,
+    video: player.getAttribute("video"),   // ✅ string, matches what playNative expects
+    manifest: player.manifest
+}).catch((err) => {
+    console.error("Quality switch failed:", err);   // also stop swallowing errors silently while debugging
+});      
+            ;
         });
     });
 }

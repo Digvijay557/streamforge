@@ -5,6 +5,8 @@ async function exists(videoPath) {
     console.log("checking exist");
     
     const fileName = path.parse(videoPath).name;
+    console.log("fileName:  "+ fileName);
+    
     const realfilename = `${fileName.split("-")[0]}.mp4`
     console.log(realfilename);
     console.log(fileName.split("-")[0]);

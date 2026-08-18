@@ -15,6 +15,7 @@ import {
     showBuffer,
     toggleMute
 } from '../controlFunctions/controlFunctions.js';
+import playStreamer from "../playbackEngine/playStreamer.js";
 
 // ==========================================================
 // NOTE ON CALLING CONVENTION
@@ -39,7 +40,7 @@ export default function bindEvents(errorHandler) {
             errorHandler.clearError();
 
             try {
-                await this.load();
+                 playStreamer(this);
                 this.loaded = true;
             } catch (error) {
                 // load() already reports fatal errors via errorHandler

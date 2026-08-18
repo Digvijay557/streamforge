@@ -17,7 +17,7 @@ async function videoHandler(req, res, config = {}) {
         }else{
             videoname = `${result.vidsrc.split("-")[0]}`
         }
-        console.log(isNative);
+       
         
         
         
@@ -56,13 +56,11 @@ async function videoHandler(req, res, config = {}) {
             
         }
         let protocol;
-        if(isNative){
-           protocol = "hls" 
-        }else{
+        
             protocol = fs.existsSync(path.join(cachePath, "manifest.sf"))
             ? "sf"
             : "hls";
-        }
+       
         
         const requestedFile = path.join(
         cachePath,
