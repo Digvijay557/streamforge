@@ -59,7 +59,6 @@ export class SFPlayerErrorHandler {
                     this.player.qualities?.[0]?.quality ?? this.player.qualities?.[0]?.index ?? 0;
 
                 playNative(this.player, video, fallbackQuality);
-              
                 
                 this.player.protocol = "native";
 
