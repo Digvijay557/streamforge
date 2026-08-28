@@ -1,4 +1,4 @@
-javascript
+
 export default class BandwidthEstimator {
     constructor() {
         this.slowEstimate = null;
@@ -23,6 +23,7 @@ export default class BandwidthEstimator {
 }
 
     getBandwidthEstimate() {
+        
     if (this.slowEstimate != null && this.fastEstimate != null) {
         return Math.min(this.fastEstimate, this.slowEstimate);
     }

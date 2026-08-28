@@ -76,19 +76,26 @@ export default async function playSF(player ,manifest, quality, isLoaded) {
         // ==========================================================
         try {
             if (!player.segmentLoader) {
-                player.segmentLoader = new SegmentLoader(
-                    player.network,
-                    player.media,
-                    (index) => {
-                        player.requestedSegmentIndex = index;
-                    },
-                    "sf",
-                    manifest,
-                    quality
-                );
-            } else {
-                player.segmentLoader.quality = quality;
-            }
+    // Build the quality ladder ABR needs — aliasing bandwidth → bitrate
+    const qualityLadder = manifest.qualities
+    .map(q => ({ quality: q.id, bitrate: q.bandwidth }))
+    .sort((a, b) => a.bitrate - b.bitrate);
+
+    player.segmentLoader = new SegmentLoader(
+        player.network,
+        player.media,
+        (index) => {
+            player.requestedSegmentIndex = index;
+        },
+        "sf",
+        manifest,
+        quality,
+        player.video,      // ← NEW: 7th arg
+        qualityLadder       // ← NEW: 8th arg
+    );
+} else {
+    player.segmentLoader.quality = quality;
+}
 
             player.segmentLoader.seekToSegment(player.segmentLoader.currentSegment);
         } catch (err) {

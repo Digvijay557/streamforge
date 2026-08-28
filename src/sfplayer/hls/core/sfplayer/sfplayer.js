@@ -47,6 +47,9 @@ class SFPlayer extends HTMLElement {
         if (this.video && this._onTimeUpdate) {
             this.video.removeEventListener("timeupdate", this._onTimeUpdate);
         }
+        if (this.video && this._onWaitingForBuffer) {
+            this.video.removeEventListener("waiting", this._onWaitingForBuffer);
+        }
     }
     connectedCallback() {
         this.init();
@@ -116,7 +119,11 @@ console.log("bufferAhead: " + this.bufferedAhead);
                     buffered: this.video.buffered,
                   })}
             } catch (err) {
- 
+                // A switch deliberately aborts an old-rendition request. It
+                // must not turn into a fatal error while the new one starts.
+                if (this.isSwitchingQuality || err?.name === "AbortError") {
+                    return;
+                }
                 this.errorHandler.handleFatalError(
                     new SFPlayerError(
                         `Playback stalled: failed to load segment ${nextIndex}`,
@@ -130,12 +137,16 @@ console.log("bufferAhead: " + this.bufferedAhead);
 
     init() {
         this.render();
-        this.video.addEventListener("timeupdate", () => {
+        this._onTimeUpdate = () => {
             this.#onTimeUpdate();
             updateBuffer(this);
             updateProgress(this)
-
-        }); 
+        };
+        this._onWaitingForBuffer = () => this.#onTimeUpdate();
+        this.video.addEventListener("timeupdate", this._onTimeUpdate);
+        // Playback emits no timeupdate while stalled, so this is needed to
+        // resume loading after a switch that exhausts the buffered range.
+        this.video.addEventListener("waiting", this._onWaitingForBuffer);
     }
 
     render() {

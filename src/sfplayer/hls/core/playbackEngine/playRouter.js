@@ -6,23 +6,16 @@ import { SFPlayerError } from "../Errorhandling/SFPlayerError.js";
 export default async function playRouter(env) {
         const { player ,index, status, protocol, quality, video, manifest } = env;
         console.log("proto:   " + protocol);
-  
-
-        if (protocol === "hls") {
-
-            await playHLS(player ,index, status);
-        
-        
-        }else {
-            console.log("ueeeuwuwu");
-            
-            await playSF(
-                player,
-                manifest,
-                quality,
-                status
-            );
-
+        try {
+            if (protocol === "hls") {
+                await playHLS(player ,index, status);
+            } else {
+                console.log("ueeeuwuwu");
+                await playSF(player, manifest, quality, status);
+            }
+        } finally {
+            // Do not permanently block buffer refills when a switch fails.
+            player.isSwitchingQuality = false;
         }
 
 }

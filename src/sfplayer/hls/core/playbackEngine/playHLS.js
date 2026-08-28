@@ -119,7 +119,8 @@ import { SFPlayerError } from "../Errorhandling/SFPlayerError.js";
     variantPlaylist
 );  
     } else {
-        player.segmentLoader.source = variantPlaylist;
+        // SegmentLoader reads `playlist`; `source` was never consumed.
+        player.segmentLoader.setPlaylist(variantPlaylist);
     }
 
     player.segmentLoader.seekToSegment(player.segmentLoader.currentSegment);

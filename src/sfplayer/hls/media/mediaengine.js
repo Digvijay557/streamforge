@@ -4,6 +4,7 @@ export class MediaEngine {
 
         this.mediaSource = new MediaSource();
         this.video.src = URL.createObjectURL(this.mediaSource);
+        this.appendQueue = Promise.resolve();
 
         this.readyPromise = new Promise((resolve, reject) => {
             this.mediaSource.addEventListener("sourceopen", () => {
@@ -83,7 +84,12 @@ export class MediaEngine {
     }
 
     append(data) {
-        return new Promise((resolve, reject) => {
+        // A quality switch can arrive while the previous segment is still
+        // being appended. SourceBuffer rejects concurrent appendBuffer calls,
+        // which previously made switching intermittently stop all buffering.
+        const append = async () => {
+            await this.#waitForUpdateEnd();
+            return new Promise((resolve, reject) => {
             this.sourceBuffer.addEventListener("updateend", resolve, { once: true });
 
             this.sourceBuffer.addEventListener(
@@ -99,7 +105,14 @@ export class MediaEngine {
             } catch (err) {
                 reject(err);
             }
-        });
+            });
+        };
+
+        const result = this.appendQueue.then(append, append);
+        // Keep the queue usable if a bad segment fails to append; callers
+        // still receive the original rejection through `result`.
+        this.appendQueue = result.catch(() => {});
+        return result;
     }
 
     setupEventListeners() {
