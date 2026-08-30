@@ -109,6 +109,8 @@ async loadNext() {
                 const { response } = await this.network.request(url);
                 const bytes = await response.arrayBuffer();
                 const durationMs = performance.now() - startTime;
+                console.log("DuratoinM: " + durationMs);
+                
 
                 if (this.bandwidthEstimator) {
                     this.bandwidthEstimator.recordSegmentDownload(bytes.byteLength, durationMs);

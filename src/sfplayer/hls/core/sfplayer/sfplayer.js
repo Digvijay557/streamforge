@@ -9,7 +9,7 @@ import cacheElements from "../cacheElements/cacheElements.js";
 import bindEvents from "../bindEvents/bindEvents.js";
 import { insertQualities, safePlay,updateGeneration, updateBuffer, updateProgress,updateVolumeUI } from "../controlFunctions/controlFunctions.js";
 import { SFPlayerError, SFPlayerErrorHandler } from "../Errorhandling/SFPlayerError.js";
-
+import getDynamicBufferTarget from "../../../ABR/dynamicBuffer.js"
 class SFPlayer extends HTMLElement {
 
     constructor() {
@@ -75,7 +75,16 @@ getAvailableQualities(){
         if (this.isSwitchingQuality) return;
         if (!this.segmentLoader) return;
         this.video.playbackRate = this.playbackSpeed;
-        this.PREFECT_BUFFER = 30; // seconds of lead time before loading next segment
+        if (this.segmentLoader.bandwidthEstimator && this.segmentLoader.qualityDecider) {
+        this.PREFECT_BUFFER = getDynamicBufferTarget(
+            this.segmentLoader.qualityDecider.currentQualityIndex,
+            this.segmentLoader.qualityDecider.qualityArray.length,
+            this.segmentLoader.bandwidthEstimator
+        );
+    } else {
+        this.PREFECT_BUFFER = 30; // fallback while ABR isn't active yet (e.g. HLS protocol)
+    }
+ // seconds of lead time before loading next segment
         
         let bufferEnd = this.video.currentTime;
 
